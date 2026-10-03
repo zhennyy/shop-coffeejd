@@ -6,12 +6,12 @@ function checkLowStock(bot, threshold = 3) {
   const owner = process.env.OWNER_CHAT_ID;
   if (!owner) return;
   // штучные — когда осталось не больше threshold шт.; весовые — не больше 1 кг; допы не отслеживаем
-  const low = db.prepare("SELECT id, name, stock, unit FROM products WHERE is_addon = 0 AND stock <= CASE WHEN unit = 'g' THEN 1000 ELSE ? END ORDER BY stock, name").all(threshold);
+  const low = db.prepare("SELECT id, name, stock, unit FROM products WHERE is_addon = 0 AND stock <= CASE WHEN unit IS NOT NULL THEN 1000 ELSE ? END ORDER BY stock, name").all(threshold);
   const sig = low.map((p) => `${p.id}:${p.stock}`).join(',');
   if (sig === db.getSetting('low_stock_sig', '')) return;
   db.setSetting('low_stock_sig', sig);
   if (!low.length) return;
-  const text = low.map((p) => (p.stock <= 0 ? `⛔️ ${p.name} — закончился` : `⚠️ ${p.name} — осталось ${p.stock} ${p.unit === 'g' ? 'г' : 'шт.'}`)).join('\n');
+  const text = low.map((p) => (p.stock <= 0 ? `⛔️ ${p.name} — закончился` : `⚠️ ${p.name} — осталось ${p.stock} ${p.unit ? require('./qty').unitLabel(p) : 'шт.'}`)).join('\n');
   const { shopUrl } = require('./orders');
   const url = shopUrl({ tab: 'admin', adm: 'products' });
   bot.telegram.sendMessage(owner, `📦 Заканчивается на складе:\n${text}`,

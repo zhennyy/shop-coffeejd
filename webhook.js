@@ -284,7 +284,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   const toKop = (v) => Math.round(parseFloat(String(v).replace(',', '.').replace(/\s/g, '')) * 100);
   const BADREQ = (m) => Object.assign(new Error(m), { expose: true });
   const cleanProduct = (b) => {
-    const weight = b.unit === 'g' || b.sold_by_weight === true;
+    const unit = b.unit === 'ml' ? 'ml' : (b.unit === 'g' || b.sold_by_weight === true) ? 'g' : null, weight = Boolean(unit);
     const p = {
       name: String(b.name || '').trim().slice(0, 120),
       description: String(b.description || '').trim().slice(0, 1000),
@@ -293,14 +293,14 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       name_en: String(b.name_en || '').trim().slice(0, 120) || null,
       description_en: String(b.description_en || '').trim().slice(0, 1000) || null,
       category_en: String(b.category_en || '').trim().slice(0, 60) || null,
-      unit: weight ? 'g' : null, step: 1, min_qty: 1,
+      unit, step: 1, min_qty: 1,
       is_addon: b.is_addon ? 1 : 0,
       addon_for: b.is_addon ? (String(b.addon_for || '*').trim().slice(0, 300) || '*') : null,
     };
     if (weight) {
       // цена вводится за 100 г в целых рублях: тогда цена за грамм — целое число копеек и копейки в заказе не теряются
       const per100 = parseFloat(String(b.price).replace(',', '.'));
-      if (!(per100 > 0) || !Number.isInteger(per100)) throw BADREQ('Цена за 100 г — целое число рублей');
+      if (!(per100 > 0) || !Number.isInteger(per100)) throw BADREQ('Цена за 100 г (или 100 мл) — целое число рублей');
       p.price = per100;
       p.step = Math.max(1, Math.min(1000, parseInt(b.step, 10) || 50));
       p.min_qty = Math.max(1, Math.min(100000, parseInt(b.min_qty, 10) || 100));

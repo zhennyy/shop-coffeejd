@@ -55,7 +55,7 @@ function tracker(o, lang) {
 }
 
 function itemsText(o, lang) {
-  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} ${i.unit === 'g' ? '— ' + i.quantity + (lang === 'en' ? ' g' : ' г') : '× ' + i.quantity} — ${rub(i.price * i.quantity)}`);
+  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} ${i.unit ? '— ' + require('./qty').fmt(i, i.quantity, lang) : '× ' + i.quantity} — ${rub(i.price * i.quantity)}`);
   if (o.discount_percent) lines.push(`${lang === 'en' ? 'Promo' : 'Промокод'} ${esc(o.promo_code || '')} −${o.discount_percent}%`);
   if (!isPickup(o)) lines.push(`${lang === 'en' ? 'Delivery' : 'Доставка'} — ${o.delivery_cost ? rub(o.delivery_cost) : (lang === 'en' ? 'free' : 'бесплатно')}`);
   lines.push(`<b>${lang === 'en' ? 'Total' : 'Итого'} ${rub(o.total)}</b>`);

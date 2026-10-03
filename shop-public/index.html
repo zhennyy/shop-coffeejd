@@ -228,6 +228,50 @@
   .arow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0}
   .arow .an{font-weight:600;font-size:14px}.arow .ap{color:var(--muted);font-size:13px}
   .bundle{font-size:13px;color:var(--muted);margin:6px 0}
+
+  /* ===== оформление: мягкие карточки, плавающая нижняя панель, удобный выбор количества ===== */
+  :root{ --accent2:#b9794a; --shadow:0 2px 6px rgba(60,35,15,.05),0 12px 28px rgba(60,35,15,.08); }
+  header{position:sticky;top:0;z-index:7;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);padding:12px 0 8px}
+  .logo{font-size:24px;background:linear-gradient(120deg,var(--text),var(--accent));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .logo span{-webkit-text-fill-color:initial}
+  .search{border-radius:16px;box-shadow:var(--shadow);border-color:transparent}
+  .chip{transition:background .15s,color .15s,transform .1s;font-weight:600}
+  .chip:active{transform:scale(.96)}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .chips .chip{padding:9px 16px}
+  .grid{gap:14px}
+  .card{border-radius:22px;box-shadow:var(--shadow);transition:transform .18s ease,box-shadow .18s ease;animation:rise .35s ease both}
+  .card:active{transform:scale(.985)}
+  @media (hover:hover){.card:hover{transform:translateY(-3px)}}
+  @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  .card:nth-child(2){animation-delay:.04s}.card:nth-child(3){animation-delay:.08s}.card:nth-child(4){animation-delay:.12s}
+  .ph{background:linear-gradient(145deg,var(--accent-soft),var(--photo));border-bottom:0}
+  .noimg{font-size:54px;opacity:.55}
+  .kind{position:absolute;right:8px;bottom:8px;font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;background:rgba(0,0,0,.55);color:#fff;backdrop-filter:blur(6px)}
+  .name{font-size:15px}
+  .price{letter-spacing:-.2px}
+  .add{background:linear-gradient(135deg,var(--accent2),var(--accent));box-shadow:0 4px 10px rgba(122,74,43,.3);border-radius:13px;transition:transform .1s}
+  .add:active{transform:scale(.92)}
+  .step{border-radius:13px}
+  .btn{background:linear-gradient(135deg,var(--accent2),var(--accent));box-shadow:0 8px 18px rgba(122,74,43,.28);border-radius:18px;transition:transform .1s,box-shadow .1s}
+  .btn:active{transform:scale(.98);box-shadow:0 3px 8px rgba(122,74,43,.25)}
+  .btn.ghost{background:var(--card);box-shadow:none}
+  .line,.order,.box{border-radius:20px;box-shadow:var(--shadow)}
+  .tabs{left:12px;right:12px;bottom:calc(10px + env(safe-area-inset-bottom));border:0;border-radius:24px;padding-bottom:0;
+    background:color-mix(in srgb,var(--card) 88%,transparent);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 10px 30px rgba(40,22,8,.18)}
+  .tabs button{border-radius:20px}
+  .tabs button.on{background:var(--accent-soft)}
+  body{padding-bottom:calc(var(--tabh) + 34px + env(safe-area-inset-bottom))}
+  .sheet{border-radius:28px 28px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.25)}
+  .sheet::before{content:'';display:block;position:sticky;top:8px;z-index:3;width:42px;height:5px;border-radius:3px;background:rgba(255,255,255,.7);margin:8px auto -13px;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .sheet .big{aspect-ratio:16/10;background:linear-gradient(145deg,var(--accent-soft),var(--photo))}
+  .sheet .act{position:sticky;bottom:0;background:linear-gradient(to top,var(--card) 70%,transparent);padding:12px 0 4px;margin-top:6px}
+  .wbox{background:var(--accent-soft);border-radius:16px;padding:12px;margin:6px 0 10px}
+  .wbox .wlbl{font-weight:700;margin-bottom:8px}
+  .wbox .opts{margin:0 0 8px}
+  .wbox .chip{background:var(--card)} .wbox .chip.on{background:var(--accent)}
+  .toast{border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+  .pill{font-weight:700}
 </style>
 </head>
 <body>
@@ -311,12 +355,14 @@ const ct = p => (lang === 'en' && p.category_en) || p.category || '';
 const baseOf = p => !p.group_key ? nm(p) : (lang === 'en' && p.name_en ? p.name_en.split(' · ')[0] : p.group_key);
 const optOf = p => (lang === 'en' && p.option_label_en) || p.option_label || '';
 const siblings = p => p.group_key ? products.filter(x => x.group_key === p.group_key && !x.is_addon) : [p];
-const isW = p => p && p.unit === 'g';
+const isW = p => Boolean(p && p.unit);
 const stepOf = p => isW(p) ? Math.max(1, p.step || 1) : 1;
 const minOf = p => isW(p) ? Math.max(1, p.min_qty || 1) : 1;
-const gram = n => lang === 'en' ? (n >= 1000 ? (n / 1000).toLocaleString('en-GB') + ' kg' : n + ' g') : (n >= 1000 ? (n / 1000).toLocaleString('ru-RU') + ' кг' : n + ' г');
-const qtyText = (p, q) => isW(p) ? gram(q) : String(q);
-const priceText = p => isW(p) ? `${rub(p.price * 100)} / 100 ${lang === 'en' ? 'g' : 'г'}` : rub(p.price);
+const UNIT = { g: { ru: 'г', en: 'g', bigRu: 'кг', bigEn: 'kg' }, ml: { ru: 'мл', en: 'ml', bigRu: 'л', bigEn: 'l' } };
+const gram = (n, u = 'g') => { const x = UNIT[u] || UNIT.g; return n >= 1000 ? (n / 1000).toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU') + ' ' + (lang === 'en' ? x.bigEn : x.bigRu) : n + ' ' + (lang === 'en' ? x.en : x.ru); };
+const unitShort = u => (UNIT[u] || UNIT.g)[lang === 'en' ? 'en' : 'ru'];
+const qtyText = (p, q) => isW(p) ? gram(q, p.unit) : String(q);
+const priceText = p => isW(p) ? `${rub(p.price * 100)} / 100 ${unitShort(p.unit)}` : rub(p.price);
 const opt2Of = p => (lang === 'en' && p.option2_label_en) || p.option2_label || '';
 const addonsFor = p => products.filter(a => a.is_addon && a.stock > 0 && a.id !== p.id && String(a.addon_for || '*').split('|').map(x => x.trim()).some(k => k === '*' || k === p.group_key || k === p.name));
 const byId = id => products.find(x => x.id == id);
@@ -345,7 +391,9 @@ function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add(
 function haptic(kind) { try { tg?.HapticFeedback?.impactOccurred(kind || 'light'); } catch {} }
 
 const NOIMG = `<div class="noimg">♨️</div>`;
-const photo = p => p && p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy" onerror="this.outerHTML=NOIMG">` : NOIMG;
+const EMO = [[/чай|tea|матча|пуэр/i, '🍵'], [/кофе|coffee|эспрессо/i, '☕'], [/набор|подар|set|gift/i, '🎁'], [/сироп|концентрат|лимонад/i, '🧃']];
+const emoOf = p => { const t = [p.category, p.group_key, p.name].join(' '); const m = EMO.find(([re]) => re.test(t)); return m ? m[1] : '♨️'; };
+const photo = p => p && p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy" onerror="this.outerHTML=NOIMG">` : `<div class="noimg">${emoOf(p || {})}</div>`;
 
 function applyLang() {
   L = T[lang];
@@ -360,7 +408,7 @@ function applyLang() {
 /* ---------- каталог ---------- */
 function stockTag(p) {
   if (p.stock <= 0) return `<span class="tag out">${L.out}</span>`;
-  if (isW(p) ? p.stock <= 1000 : p.stock <= 3) return `<span class="tag low">${L.low(isW(p) ? gram(p.stock) : p.stock)}</span>`;
+  if (isW(p) ? p.stock <= 1000 : p.stock <= 3) return `<span class="tag low">${L.low(isW(p) ? gram(p.stock, p.unit) : p.stock)}</span>`;
   return '';
 }
 function ctrl(p) {
@@ -371,7 +419,7 @@ function ctrl(p) {
 }
 const cardHtml = p => `
   <article class="card ${p.stock <= 0 ? 'out' : ''}" data-open="${p.id}">
-    <div class="ph">${photo(p)}${stockTag(p)}</div>
+    <div class="ph">${photo(p)}${stockTag(p)}${isW(p) ? `<span class="kind">${p.unit === 'ml' ? (lang === 'en' ? 'by volume' : 'на розлив') : (lang === 'en' ? 'by weight' : 'на развес')}</span>` : ''}</div>
     <div class="info">
       ${ct(p) ? `<div class="cat">${esc(ct(p))}</div>` : ''}
       <div class="name">${esc(baseOf(p))}</div>
@@ -407,7 +455,7 @@ function renderCart() {
   $('v-cart').innerHTML = `<h1>${L.cartTitle}</h1>` + (lines.length ? lines.map(({ p, q }) => `
       <div class="line">
         <div class="thumb" data-open="${p.id}">${photo(p)}</div>
-        <div class="mid"><div class="name">${esc(nm(p))}${isW(p) ? ', ' + gram(q) : ''}</div><div class="price">${rub(p.price * q)}</div></div>
+        <div class="mid"><div class="name">${esc(nm(p))}${isW(p) ? ', ' + gram(q, p.unit) : ''}</div><div class="price">${rub(p.price * q)}</div></div>
         <div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>
       </div>`).join('') + `
       <div class="total"><span>${L.total}</span><b>${rub(sum)}</b></div>
@@ -445,6 +493,15 @@ async function change(id, delta) {
   try { await api('/cart', { product_id: id, qty: q }); }
   catch (e) { if (prev) cart[id] = prev; else delete cart[id]; refresh(id); toast(e.message); }
 }
+async function setQty(id, q) {
+  const p = byId(id); if (!p) return;
+  if (q > p.stock) { toast(L.noMore); return; }
+  const prev = cart[id] || 0;
+  if (q) cart[id] = q; else delete cart[id];
+  haptic('medium'); refresh(id);
+  try { await api('/cart', { product_id: id, qty: q }); }
+  catch (e) { if (prev) cart[id] = prev; else delete cart[id]; refresh(id); toast(e.message); }
+}
 async function checkout() {
   if (!cartTotals().n) { toast(L.cartEmpty); return; }
   try {
@@ -464,7 +521,7 @@ async function loadOrders() {
   const subsHtml = subsData.subscriptions.length ? `<div class="box"><h3>Регулярные заказы</h3>${subsData.subscriptions.map(x => `
       <div class="sub" style="padding:8px 0;border-top:1px solid var(--line,#eee)">
         <div><b>${dayName(x.interval_days)}</b>${x.active ? ` · следующий ${esc(x.next_date.split('-').reverse().join('.'))}` : ' · на паузе'}</div>
-        <div class="note" style="text-align:left">${x.items.map(i => esc(i.name) + (i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty)).join(', ')}</div>
+        <div class="note" style="text-align:left">${x.items.map(i => esc(i.name) + (i.unit ? ', ' + gram(i.qty, i.unit) : ' × ' + i.qty)).join(', ')}</div>
         <div class="seg" style="margin-top:6px;flex-wrap:wrap">
           ${x.active ? `<button data-subact="skip" data-sub="${x.id}">Пропустить раз</button><button data-subact="pause" data-sub="${x.id}">Пауза</button>` : `<button data-subact="resume" data-sub="${x.id}">Возобновить</button>`}
           <button data-subact="delete" data-sub="${x.id}">Отменить</button>
@@ -477,7 +534,7 @@ async function loadOrders() {
       <div class="top"><span class="code">№ ${esc(o.code)}</span><span class="pill ${esc(o.status)}">${esc(o.statusLabel)}</span></div>
       ${o.step >= 0 ? `<div class="steps">${(lang === 'en' ? ['Paid', 'Packing', o.pickup ? 'Ready' : 'Shipped', o.pickup ? 'Picked up' : 'Delivered'] : ['Оплачен', 'Собираем', o.pickup ? 'Готов' : 'Отправлен', o.pickup ? 'Получен' : 'Доставлен'])
         .map((n, i) => `<div class="${i < o.step || o.step === 3 ? 'done' : i === o.step ? 'now' : ''}">${n}</div>`).join('')}</div>` : ''}
-      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
+      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit ? ', ' + gram(i.qty, i.unit) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
         ${o.delivery_cost ? `<li><span>${L.delivery}</span><span>${rub(o.delivery_cost)}</span></li>` : ''}</ul>
       <div class="sum"><span>${L.total}</span><span>${rub(o.total)}</span></div>
       <div class="meta">${esc(when(o.created_at))}${o.address ? ' · ' + esc(o.address) : ''}</div>
@@ -506,7 +563,7 @@ async function aiAsk() {
 let openId = null;
 function renderSheet() {
   const p = byId(openId); if (!p) return;
-  const stock = p.stock > 0 ? `<div class="stock" style="color:var(--ok)">✓ ${isW(p) ? (lang === 'en' ? 'In stock: ' : 'В наличии: ') + gram(p.stock) : L.inStock(p.stock)}</div>` : `<div class="stock" style="color:var(--bad)">${L.out}</div>`;
+  const stock = p.stock > 0 ? `<div class="stock" style="color:var(--ok)">✓ ${isW(p) ? (lang === 'en' ? 'In stock: ' : 'В наличии: ') + gram(p.stock, p.unit) : L.inStock(p.stock)}</div>` : `<div class="stock" style="color:var(--bad)">${L.out}</div>`;
   const q = cart[p.id] || 0;
   const act = p.stock < minOf(p) ? '' : q
     ? `<div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>`
@@ -525,8 +582,11 @@ function renderSheet() {
   const adds = addonsFor(p);
   const addHtml = adds.length ? `<div class="addons"><h3>${lang === 'en' ? 'Add to your order' : 'Добавить к заказу'}</h3>${adds.map(a => `
       <div class="arow"><div><div class="an">${esc(nm(a))}</div><div class="ap">+ ${priceText(a)}</div></div><div data-ctrl="${a.id}">${ctrl(a)}</div></div>`).join('')}</div>` : '';
-  const bundleHtml = p.bundle && p.bundle.length ? `<div class="bundle"><b>${lang === 'en' ? 'Set includes' : 'В наборе'}:</b> ${p.bundle.map(b => esc((lang === 'en' && b.name_en) || b.name) + (b.unit === 'g' ? ' — ' + gram(b.qty) : ' × ' + b.qty)).join('; ')}</div>` : '';
-  const weightHint = isW(p) ? `<div class="note" style="text-align:left;margin:4px 0">${lang === 'en' ? `Choose any amount from ${gram(minOf(p))} in steps of ${gram(stepOf(p))}` : `Выберите любое количество от ${gram(minOf(p))} с шагом ${gram(stepOf(p))}`}${q ? ` · ${lang === 'en' ? 'Total' : 'Сумма'}: <b>${rub(p.price * q)}</b>` : ''}</div>` : '';
+  const bundleHtml = p.bundle && p.bundle.length ? `<div class="bundle"><b>${lang === 'en' ? 'Set includes' : 'В наборе'}:</b> ${p.bundle.map(b => esc((lang === 'en' && b.name_en) || b.name) + (b.unit ? ' — ' + gram(b.qty, b.unit) : ' × ' + b.qty)).join('; ')}</div>` : '';
+  const presets = isW(p) ? [...new Set([minOf(p), 250, 500, 750, 1000, 2000].filter(v => v >= minOf(p) && v % stepOf(p) === 0 && v <= p.stock))].sort((a, b) => a - b).slice(0, 5) : [];
+  const weightHint = isW(p) ? `<div class="wbox"><div class="wlbl">${lang === 'en' ? 'How much do you need?' : 'Сколько нужно?'}</div>
+      <div class="opts">${presets.map(v => `<button class="chip ${q === v ? 'on' : ''}" data-setq="${p.id}:${v}">${gram(v, p.unit)}</button>`).join('')}</div>
+      <div class="note" style="text-align:left;margin:2px 0 0">${lang === 'en' ? `Or use − / + : from ${gram(minOf(p), p.unit)}, step ${gram(stepOf(p), p.unit)}` : `Или кнопками − / + : от ${gram(minOf(p), p.unit)}, шаг ${gram(stepOf(p), p.unit)}`}${q ? ` · ${lang === 'en' ? 'Total' : 'Сумма'}: <b>${rub(p.price * q)}</b>` : ''}</div></div>` : '';
   $('sheet').innerHTML = `<button class="x" data-close>✕</button>
     <div class="big">${photo(p)}</div>
     <div class="body">
@@ -558,10 +618,11 @@ function go(t) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-add],[data-dec],[data-open],[data-variant],[data-close],[data-c],[data-tab],[data-lang],[data-hint],[data-checkout],[data-retry]');
+  const t = e.target.closest('[data-add],[data-dec],[data-setq],[data-open],[data-variant],[data-close],[data-c],[data-tab],[data-lang],[data-hint],[data-checkout],[data-retry]');
   if (!t) return;
   const d = t.dataset;
-  if (d.add) { e.stopPropagation(); change(+d.add, 1); }
+  if (d.setq) { e.stopPropagation(); const [id, v] = d.setq.split(':').map(Number); setQty(id, cart[id] === v ? 0 : v); }
+  else if (d.add) { e.stopPropagation(); change(+d.add, 1); }
   else if (d.dec) { e.stopPropagation(); change(+d.dec, -1); }
   else if (d.c !== undefined) { cat = d.c || null; renderChips(); renderGrid(); }
   else if (d.close !== undefined) closeSheet();
@@ -626,7 +687,7 @@ function renderAdmProducts() {
     <div class="aline" data-edit="${p.id}">
       <div class="thumb">${photo(p)}</div>
       <div class="mid"><div class="t">${esc(p.name)}</div>
-        <div class="s">${p.is_addon ? '<b>доп</b> · ' : ''}${p.is_bundle ? '<b>набор</b> · ' : ''}${p.unit === 'g' ? '<b>на вес</b> · ' + rub(p.price * 100) + '/100 г' : rub(p.price)} · ${p.stock > 0 ? ((p.unit === 'g' ? p.stock <= 1000 : p.stock <= 3) ? `<span class="warn">осталось ${p.unit === 'g' ? gram(p.stock) : p.stock}</span>` : (p.unit === 'g' ? gram(p.stock) : `${p.stock} шт.`)) : '<span class="warn">нет в наличии</span>'}${p.category ? ' · ' + esc(p.category) : ''}${p.has_photo ? '' : ' · <span class="warn">без фото</span>'}</div></div>
+        <div class="s">${p.is_addon ? '<b>доп</b> · ' : ''}${p.is_bundle ? '<b>набор</b> · ' : ''}${p.unit ? `<b>${p.unit === 'ml' ? 'на объём' : 'на вес'}</b> · ` + rub(p.price * 100) + '/100 ' + unitShort(p.unit) : rub(p.price)} · ${p.stock > 0 ? ((p.unit ? p.stock <= 1000 : p.stock <= 3) ? `<span class="warn">осталось ${p.unit ? gram(p.stock, p.unit) : p.stock}</span>` : (p.unit ? gram(p.stock, p.unit) : `${p.stock} шт.`)) : '<span class="warn">нет в наличии</span>'}${p.category ? ' · ' + esc(p.category) : ''}${p.has_photo ? '' : ' · <span class="warn">без фото</span>'}</div></div>
       <span style="color:var(--muted)">›</span>
     </div>`).join('');
 }
@@ -635,7 +696,7 @@ function openEditor(id) {
   let p = id === 'new' ? { name: '', price: '', stock: 1, category: '', description: '' } : admProducts.find(x => x.id == id);
   if (!p) return;
   if (p.group_key) p = { ...p, name: p.group_key, name_en: (p.name_en || '').split(' · ')[0] };
-  const f = (k, label, type = 'text', extra = '') => `<label>${label}</label><input name="${k}" type="${type}" value="${esc(k === 'price' && p.price ? (p.unit === 'g' ? p.price : p.price / 100) : p[k] ?? '')}" ${extra}>`;
+  const f = (k, label, type = 'text', extra = '') => `<label>${label}</label><input name="${k}" type="${type}" value="${esc(k === 'price' && p.price ? (p.unit ? p.price : p.price / 100) : p[k] ?? '')}" ${extra}>`;
   edBundle = (p.bundle || []).map(b => ({ product_id: b.product_id, qty: b.qty }));
   $('sheet').innerHTML = `<button class="x" data-close>✕</button>
     ${id === 'new' ? '' : `<div class="big photoEdit">${photo(p)}<button class="up" data-photo="${p.id}">📷 ${p.has_photo ? 'Заменить фото' : 'Добавить фото'}</button></div>`}
@@ -643,14 +704,15 @@ function openEditor(id) {
       <h2>${id === 'new' ? 'Новый товар' : 'Редактирование'}</h2>
       ${id === 'new' ? '' : `<details><summary>Фото по ссылке</summary><div style="display:flex;gap:8px;margin-top:8px"><input id="photoUrl" placeholder="https://…" inputmode="url"><button class="btn" style="width:auto;padding:0 16px" data-purl="${p.id}">OK</button></div></details>`}
       ${f('name', 'Название')}
-      <div class="two"><div>${f('price', p.unit === 'g' ? 'Цена за 100 г, ₽ (целая)' : 'Цена, ₽ (для весового — за 100 г)', 'number', 'inputmode="decimal" min="1" step="any"')}</div><div>${f('stock', p.unit === 'g' ? 'Остаток, г' : 'Остаток, шт. (для весового — граммы)', 'number', 'inputmode="numeric" min="0"' + (p.is_bundle ? ' disabled title="Считается по составу набора"' : ''))}</div></div>
+      <div class="two"><div>${f('price', p.unit ? 'Цена за 100 ' + unitShort(p.unit) + ', ₽ (целая)' : 'Цена, ₽ (для весового — за 100 г)', 'number', 'inputmode="decimal" min="1" step="any"')}</div><div>${f('stock', p.unit ? 'Остаток, ' + unitShort(p.unit) : 'Остаток, шт. (для весового — граммы)', 'number', 'inputmode="numeric" min="0"' + (p.is_bundle ? ' disabled title="Считается по составу набора"' : ''))}</div></div>
       ${p.is_bundle ? '<div class="note" style="text-align:left">Остаток набора считается сам по составу.</div>' : ''}
       ${f('option_label', 'Параметр 1 (например вес «250 г»; пусто — без вариантов)')}
       ${f('option2_label', 'Параметр 2 (необязательно: «Пакет», «Коробка», цвет)')}
-      <details ${p.unit === 'g' ? 'open' : ''}><summary>Продажа на вес</summary>
-        <label class="line2"><span>Покупатель выбирает граммы</span><span class="sw"><input type="checkbox" id="f_w" ${p.unit === 'g' ? 'checked' : ''}><i></i></span></label>
-        <div class="two"><div>${f('step', 'Шаг, г', 'number', 'inputmode="numeric" min="1"')}</div><div>${f('min_qty', 'Минимум, г', 'number', 'inputmode="numeric" min="1"')}</div></div>
-        <div class="note" style="text-align:left">Цена задаётся за 100 г целыми рублями, остаток считается в граммах. Пример: шаг 50, минимум 100.</div>
+      <details ${p.unit ? 'open' : ''}><summary>Продажа на вес или объём</summary>
+        <label>Как продаётся</label><select id="f_unit" style="width:100%;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--text)">
+          <option value="" ${!p.unit ? 'selected' : ''}>Штуками</option><option value="g" ${p.unit === 'g' ? 'selected' : ''}>На вес — граммы</option><option value="ml" ${p.unit === 'ml' ? 'selected' : ''}>На объём — миллилитры</option></select>
+        <div class="two"><div>${f('step', 'Шаг (г / мл)', 'number', 'inputmode="numeric" min="1"')}</div><div>${f('min_qty', 'Минимум (г / мл)', 'number', 'inputmode="numeric" min="1"')}</div></div>
+        <div class="note" style="text-align:left">Цена задаётся за 100 г (или 100 мл) целыми рублями, остаток считается в граммах или миллилитрах. Пример: шаг 50, минимум 100.</div>
       </details>
       <details ${p.is_addon ? 'open' : ''}><summary>Доп к другим товарам</summary>
         <label class="line2"><span>Это доп (упаковка, помол)</span><span class="sw"><input type="checkbox" id="f_addon" ${p.is_addon ? 'checked' : ''}><i></i></span></label>
@@ -685,7 +747,7 @@ function renderBundleBox() {
 }
 async function saveProduct() {
   const data = Object.fromEntries(new FormData($('pform')).entries());
-  data.unit = $('f_w')?.checked ? 'g' : '';
+  data.unit = $('f_unit')?.value || '';
   data.is_addon = Boolean($('f_addon')?.checked);
   data.bundle = edBundle.filter(b => b.product_id);
   if (data.bundle.length === 0 && editId !== 'new') data.bundle = [];
@@ -737,7 +799,7 @@ function orderCard(o) {
   return `
     <div class="order" id="ord-${o.id}">
       <div class="top"><span class="code">№ ${esc(o.code)}${o.buyer ? ' · ' + esc(o.buyer) : ''}</span><span class="pill ${esc(o.status)}">${esc(stLabel(o))}</span></div>
-      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
+      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit ? ', ' + gram(i.qty, i.unit) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
         ${o.pickup ? '' : `<li><span>Доставка</span><span>${o.delivery_cost ? rub(o.delivery_cost) : 'бесплатно'}</span></li>`}</ul>
       <div class="sum"><span>Итого</span><span>${rub(o.total)}</span></div>
       <div class="meta">${esc(when(o.created_at))} · ${o.pickup ? '🏠 Самовывоз' : '📍 ' + esc(o.address)}</div>

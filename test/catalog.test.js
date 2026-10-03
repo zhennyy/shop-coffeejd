@@ -153,3 +153,17 @@ test('подписка и повтор заказа с весовым товар
   const o = S.db.prepare('SELECT total FROM orders WHERE chat_id = ? ORDER BY id DESC').get(U2);
   assert.equal(o.total, 250 * 500 + 70000);
 });
+
+test('на объём (мл) и пример «чай — 10 сортов» загружается целиком', async () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const ml = await mk({ name: 'Сироп на розлив', unit: 'ml', price: 180, stock: 5000, step: 50, min_qty: 100 });
+  assert.equal(row(ml).unit, 'ml');
+  assert.equal((await S.call(U, 'POST', '/shop-api/cart', { product_id: ml, qty: 125 })).status, 400);
+  assert.equal((await S.call(U, 'POST', '/shop-api/cart', { product_id: ml, qty: 250 })).status, 200);
+  const res = await stock.importXlsx(fs.readFileSync(path.join(__dirname, '..', 'примеры', 'чай-10-сортов.xlsx')));
+  assert.deepEqual(res.errors, []); assert.equal(res.created, 17);
+  const teas = S.db.prepare("SELECT * FROM products WHERE category = 'Чай' AND name LIKE '%Холодный чай%'").get();
+  assert.equal(teas.unit, 'ml');
+  const cards = S.db.prepare("SELECT COUNT(DISTINCT COALESCE(group_key, name)) n FROM products WHERE category = 'Чай' AND id IN (SELECT id FROM products ORDER BY id DESC LIMIT 17)").get().n;
+  assert.equal(cards, 10);   // 17 строк = 10 карточек чая
+});

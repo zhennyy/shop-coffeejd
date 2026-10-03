@@ -1,6 +1,6 @@
 // stock.js — выгрузка и загрузка склада: Excel (.xlsx) и CSV (открывается в Excel/Numbers/Google Таблицах).
 // Колонки: id; название; вариант; вариант2; категория; цена_руб; остаток; описание; тип; для_товаров; состав; шаг_г; мин_г
-//   тип: товар | на вес | доп | набор. На вес: цена — за 100 г (целые рубли), остаток и шаги — в граммах.
+//   тип: товар | на вес | на объём | доп | набор. На вес/объём: цена — за 100 г (мл), целые рубли; остаток, шаг и минимум — в граммах (мл).
 //   доп: в «для_товаров» через «|» названия товаров, к которым он предлагается (или *); набор: «состав» вида «12×2; 15×1» (id или точные названия).
 // Загрузка: строка с id обновляет цену, остаток (и состав/«для_товаров», если колонка есть); строка без id создаёт товар.
 const db = require('./db');
@@ -14,12 +14,12 @@ const cell = (v) => {
   return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-const typeOf = (p) => (inv.isBundle(p.id) ? 'набор' : p.is_addon ? 'доп' : p.unit === 'g' ? 'на вес' : 'товар');
+const typeOf = (p) => (inv.isBundle(p.id) ? 'набор' : p.is_addon ? 'доп' : p.unit === 'g' ? 'на вес' : p.unit === 'ml' ? 'на объём' : 'товар');
 // строки таблицы (массив массивов значений)
 function tableRows() {
   const rows = db.prepare('SELECT * FROM products ORDER BY is_addon, category, COALESCE(group_key, name), price').all();
   return rows.map((p) => {
-    const w = p.unit === 'g';
+    const w = Boolean(p.unit);
     return [p.id, p.group_key || p.name, p.option_label || '', p.option2_label || '', p.category || '', w ? p.price : p.price / 100, p.stock, p.description || '',
       typeOf(p), p.addon_for || '', inv.bundleOf(p.id).map((b) => `${b.product_id}×${b.qty}`).join('; '), w ? p.step : '', w ? p.min_qty : ''];
   });
@@ -107,7 +107,7 @@ function importRows(rows) {
   const ix = {
     id: col('id'), name: col('название', 'name'), opt: col('вариант', 'option'), opt2: col('вариант2', 'option2'), cat: col('категория', 'category'),
     price: col('цена_руб', 'цена', 'price', 'price_rub'), stock: col('остаток', 'stock'), desc: col('описание', 'description'),
-    type: col('тип', 'type'), addon: col('для_товаров', 'addon_for'), parts: col('состав', 'bundle'), step: col('шаг_г', 'step'), min: col('мин_г', 'min'),
+    type: col('тип', 'type'), addon: col('для_товаров', 'addon_for'), parts: col('состав', 'bundle'), step: col('шаг_г', 'шаг', 'step'), min: col('мин_г', 'мин', 'min'),
   };
   if (ix.stock < 0 && ix.price < 0) throw new Error('Не нашла колонки «остаток» или «цена_руб» — берите файл из выгрузки');
   const res = { updated: 0, created: 0, unchanged: 0, errors: [] };
@@ -126,7 +126,7 @@ function importRows(rows) {
         if (id) {
           const cur = get.get(parseInt(id, 10));
           if (!cur) throw BAD(`строка ${line}: товара с id ${id} нет`);
-          const weight = cur.unit === 'g';
+          const weight = Boolean(cur.unit);
           let np = cur.price;
           if (priceRub !== null) {
             if (weight && !Number.isInteger(priceRub)) throw BAD(`строка ${line}: цена за 100 г — целые рубли`);
@@ -142,13 +142,13 @@ function importRows(rows) {
         }
         const base = g(ix.name), opt = g(ix.opt), opt2 = g(ix.opt2);
         if (!base || priceRub === null) throw BAD(`строка ${line}: для нового товара нужны название и цена`);
-        const weight = type.replace(/\s/g, '') === 'навес';
+        const tnorm = type.replace(/\s/g, ''), unit = tnorm === 'навес' ? 'g' : tnorm === 'наобъём' || tnorm === 'наобъем' ? 'ml' : null, weight = Boolean(unit);
         if (weight && !Number.isInteger(priceRub)) throw BAD(`строка ${line}: цена за 100 г — целые рубли`);
         const step = weight ? Math.max(1, parseInt(g(ix.step), 10) || 50) : 1, min = weight ? Math.max(1, parseInt(g(ix.min), 10) || 100) : 1;
         const full = [base, opt, opt2].filter(Boolean).join(' · ');
         const r2 = db.prepare(`INSERT INTO products (name, description, price, stock, category, group_key, option_label, option2_label, unit, step, min_qty, is_addon, addon_for)
                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(full, g(ix.desc) || null, weight ? priceRub : Math.round(priceRub * 100), stock ?? 0, g(ix.cat) || null,
-          opt || opt2 ? base : null, opt || null, opt2 || null, weight ? 'g' : null, step, min, type === 'доп' ? 1 : 0, type === 'доп' ? (g(ix.addon) || '*') : null);
+          opt || opt2 ? base : null, opt || null, opt2 || null, unit, step, min, type === 'доп' ? 1 : 0, type === 'доп' ? (g(ix.addon) || '*') : null);
         inv.log(Number(r2.lastInsertRowid), stock ?? 0, stock ?? 0, 'добавлен загрузкой файла');
         if (type === 'набор') bundles.push([Number(r2.lastInsertRowid), g(ix.parts), line]);
         res.created++;

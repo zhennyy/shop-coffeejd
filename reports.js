@@ -5,7 +5,8 @@ const inv = require('./inventory');
 const PAID_SQL = "('paid','assembling','shipped','delivered')";
 const rub = (kop) => Math.round(kop / 100).toLocaleString('ru-RU') + ' ₽';
 const clampDays = (d) => Math.min(366, Math.max(1, parseInt(d, 10) || 30));
-const qtyTxt = (unit, q) => (unit === 'g' ? `${q} г` : `${q} шт.`);
+const U = { g: 'г', ml: 'мл' };
+const qtyTxt = (unit, q) => `${q} ${U[unit] || 'шт.'}`;
 
 function build(daysIn = 30) {
   const days = clampDays(daysIn);
@@ -19,7 +20,7 @@ function build(daysIn = 30) {
   const byMethod = db.prepare(`SELECT COALESCE(delivery_method, 'старые заказы') method, COUNT(*) n, SUM(total) revenue FROM orders
                                WHERE substr(status, 1, instr(status || ':', ':') - 1) IN ${PAID_SQL} AND paid_at >= datetime('now', ?) GROUP BY delivery_method ORDER BY n DESC`).all(since);
   const stock = db.prepare(`SELECT id, name, unit, stock, is_addon FROM products ORDER BY is_addon, stock, name`).all()
-    .map((p) => ({ ...p, bundle: inv.isBundle(p.id), low: p.stock <= (p.unit === 'g' ? 1000 : 3) }));
+    .map((p) => ({ ...p, bundle: inv.isBundle(p.id), low: p.stock <= (p.unit ? 1000 : 3) }));
   const moves = db.prepare(`SELECT l.ts, p.name, p.unit, l.delta, l.after, l.reason, l.order_id FROM stock_log l LEFT JOIN products p ON p.id = l.product_id
                             WHERE l.ts >= datetime('now', ?) ORDER BY l.id DESC LIMIT 2000`).all(since);
   return { days, orders, avg: orders.n ? Math.round(orders.revenue / orders.n) : 0, byProduct, byMethod, stock, moves };
@@ -57,9 +58,9 @@ async function xlsx(daysIn = 30) {
   sheet('Итоги', ['Показатель', 'Значение'], [
     ['Период, дней', r.days], ['Оплачено заказов', r.orders.n], ['Выручка, ₽', r.orders.revenue / 100], ['в том числе доставка, ₽', r.orders.delivery / 100],
     ['Средний чек, ₽', r.avg / 100], ['Заказов с промокодом', r.orders.promo]], [30, 16]);
-  sheet('Продажи по товарам', ['Товар', 'Продано', 'Ед.', 'Сумма до скидок, ₽'], r.byProduct.map((p) => [p.name, p.qty, p.unit === 'g' ? 'г' : 'шт.', p.revenue / 100]), [42, 10, 6, 18]);
+  sheet('Продажи по товарам', ['Товар', 'Продано', 'Ед.', 'Сумма до скидок, ₽'], r.byProduct.map((p) => [p.name, p.qty, U[p.unit] || 'шт.', p.revenue / 100]), [42, 10, 6, 18]);
   sheet('Способы получения', ['Способ', 'Заказов', 'Выручка, ₽'], r.byMethod.map((m) => [METHOD[m.method] || m.method, m.n, m.revenue / 100]), [24, 10, 14]);
-  sheet('Остатки', ['id', 'Товар', 'Остаток', 'Ед.', 'Тип', 'Мало'], r.stock.map((p) => [p.id, p.name, p.stock, p.unit === 'g' ? 'г' : 'шт.', p.bundle ? 'набор' : p.is_addon ? 'доп' : 'товар', p.low && !p.is_addon && !p.bundle ? 'да' : '']), [6, 42, 10, 6, 8, 7]);
+  sheet('Остатки', ['id', 'Товар', 'Остаток', 'Ед.', 'Тип', 'Мало'], r.stock.map((p) => [p.id, p.name, p.stock, U[p.unit] || 'шт.', p.bundle ? 'набор' : p.is_addon ? 'доп' : 'товар', p.low && !p.is_addon && !p.bundle ? 'да' : '']), [6, 42, 10, 6, 8, 7]);
   sheet('Движение товара', ['Дата (UTC)', 'Товар', 'Изменение', 'Остаток после', 'Причина', 'Заказ'], r.moves.map((m) => [m.ts, m.name || '—', m.delta, m.after, m.reason, m.order_id || '']), [20, 42, 11, 14, 28, 8]);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
