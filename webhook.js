@@ -7,6 +7,8 @@ const { checkLowStock } = require('./notify');
 const { t } = require('./i18n');
 const crypto = require('crypto');
 const axios = require('axios');
+const inv = require('./inventory');
+const qty_ = require('./qty');
 const { getPayment } = require('./payments/yookassa');
 const orders = require('./orders');
 const { sendToBuyer } = require('./chat');
@@ -139,13 +141,15 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   app.get('/shop-api/catalog', shopAuth, (req, res) => {
     const products = db
       .prepare(`SELECT id, name, name_en, description, description_en, category, category_en, price, stock, photo_url,
-                       group_key, option_label, option_label_en
+                       group_key, option_label, option_label_en, option2_label, option2_label_en, is_addon, addon_for, unit, step, min_qty
                 FROM products ORDER BY stock = 0, category, id`)
       .all();
+    const parts = db.prepare('SELECT b.bundle_id, p.name, p.name_en, b.qty, p.unit FROM bundle_items b JOIN products p ON p.id = b.product_id ORDER BY p.name').all();
     // ссылку на фото не отдаём как есть: картинки идут через наш сервер (/shop-photo),
     // иначе часть сайтов-источников не показывает их внутри Telegram
     const list = products.map(({ photo_url, ...p }) => ({
       ...p,
+      bundle: parts.filter((x) => x.bundle_id === p.id).map((x) => ({ name: x.name, name_en: x.name_en, qty: x.qty, unit: x.unit })),
       photo: photo_url ? `/shop-photo/${p.id}?v=${crypto.createHash('md5').update(photo_url).digest('hex').slice(0, 8)}` : null,
     }));
     const owner = isOwnerId(req.chatId);
@@ -187,9 +191,10 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   app.post('/shop-api/cart', shopAuth, (req, res) => {
     const productId = parseInt(req.body.product_id, 10);
     const qty = Math.max(0, parseInt(req.body.qty, 10) || 0);
-    const p = db.prepare('SELECT stock FROM products WHERE id = ?').get(productId);
+    const p = db.prepare('SELECT stock, unit, step, min_qty FROM products WHERE id = ?').get(productId);
     if (!p) return res.status(404).json({ error: 'Товар не найден' });
     if (qty > p.stock) return res.status(400).json({ error: 'Больше нет в наличии' });
+    if (!qty_.valid(p, qty)) return res.status(400).json({ error: qty_.explain(p, db.getLang(req.chatId)) });
     if (qty === 0) {
       db.prepare('DELETE FROM cart_items WHERE chat_id = ? AND product_id = ?').run(req.chatId, productId);
     } else {
@@ -277,66 +282,94 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   };
   const admP = [crmOrTg, ownerOnly];
   const toKop = (v) => Math.round(parseFloat(String(v).replace(',', '.').replace(/\s/g, '')) * 100);
+  const BADREQ = (m) => Object.assign(new Error(m), { expose: true });
   const cleanProduct = (b) => {
+    const weight = b.unit === 'g' || b.sold_by_weight === true;
     const p = {
       name: String(b.name || '').trim().slice(0, 120),
       description: String(b.description || '').trim().slice(0, 1000),
-      price: toKop(b.price),
       stock: Math.max(0, parseInt(b.stock, 10) || 0),
       category: String(b.category || '').trim().slice(0, 60) || null,
       name_en: String(b.name_en || '').trim().slice(0, 120) || null,
       description_en: String(b.description_en || '').trim().slice(0, 1000) || null,
       category_en: String(b.category_en || '').trim().slice(0, 60) || null,
+      unit: weight ? 'g' : null, step: 1, min_qty: 1,
+      is_addon: b.is_addon ? 1 : 0,
+      addon_for: b.is_addon ? (String(b.addon_for || '*').trim().slice(0, 300) || '*') : null,
     };
-    // вариант: в базе название хранится целиком «База · вариант», чтобы корзина и заказы показывали его как есть
-    const opt = String(b.option_label || '').trim().slice(0, 40);
-    const optEn = String(b.option_label_en || '').trim().slice(0, 40);
+    if (weight) {
+      // цена вводится за 100 г в целых рублях: тогда цена за грамм — целое число копеек и копейки в заказе не теряются
+      const per100 = parseFloat(String(b.price).replace(',', '.'));
+      if (!(per100 > 0) || !Number.isInteger(per100)) throw BADREQ('Цена за 100 г — целое число рублей');
+      p.price = per100;
+      p.step = Math.max(1, Math.min(1000, parseInt(b.step, 10) || 50));
+      p.min_qty = Math.max(1, Math.min(100000, parseInt(b.min_qty, 10) || 100));
+      if (p.min_qty % p.step) throw BADREQ('Минимум должен делиться на шаг (например, шаг 50 г, минимум 100 г)');
+    } else p.price = toKop(b.price);
+    // варианты: в базе название хранится целиком «База · вариант · вариант2», чтобы корзина и заказы показывали его как есть
+    const opt = String(b.option_label || '').trim().slice(0, 40), optEn = String(b.option_label_en || '').trim().slice(0, 40);
+    const opt2 = String(b.option2_label || '').trim().slice(0, 40), opt2En = String(b.option2_label_en || '').trim().slice(0, 40);
+    if (opt2 && !opt) throw BADREQ('Сначала заполните первый вариант (например, вес), потом второй (например, упаковку)');
     if (opt) {
+      const tail = [opt, opt2].filter(Boolean).join(' · '), tailEn = [optEn || opt, opt2 ? (opt2En || opt2) : ''].filter(Boolean).join(' · ');
       p.group_key = p.name;
-      p.option_label = opt;
-      p.option_label_en = optEn || null;
-      p.name = `${p.name} · ${opt}`.slice(0, 160);
-      p.name_en = p.name_en ? `${p.name_en} · ${optEn || opt}`.slice(0, 160) : null;
-    } else { p.group_key = null; p.option_label = null; p.option_label_en = null; }
+      p.option_label = opt; p.option_label_en = optEn || null;
+      p.option2_label = opt2 || null; p.option2_label_en = opt2En || null;
+      p.name = `${p.name} · ${tail}`.slice(0, 160);
+      p.name_en = p.name_en ? `${p.name_en} · ${tailEn}`.slice(0, 160) : null;
+    } else { p.group_key = null; p.option_label = null; p.option_label_en = null; p.option2_label = null; p.option2_label_en = null; }
     if (!p.name) throw new Error('Укажите название');
     if (!(p.price > 0)) throw new Error('Укажите цену');
+    if (p.is_addon && Array.isArray(b.bundle) && b.bundle.length) throw BADREQ('Доп не может быть набором');
     return p;
   };
+  const COLS_SQL = `name=@name, description=@description, price=@price, category=@category, name_en=@name_en, description_en=@description_en, category_en=@category_en,
+                    group_key=@group_key, option_label=@option_label, option_label_en=@option_label_en, option2_label=@option2_label, option2_label_en=@option2_label_en,
+                    unit=@unit, step=@step, min_qty=@min_qty, is_addon=@is_addon, addon_for=@addon_for`;
+  const sendAdmErr = (res, e) => res.status(400).json({ error: e.message });
 
   app.get('/shop-api/admin/products', ...admP, (req, res) => {
-    const rows = db.prepare('SELECT * FROM products ORDER BY category, id').all();
-    res.json({ products: rows.map(({ photo_url, ...p }) => ({ ...p, has_photo: Boolean(photo_url),
+    const rows = db.prepare('SELECT * FROM products ORDER BY is_addon, category, id').all();
+    res.json({ products: rows.map(({ photo_url, ...p }) => ({ ...p, has_photo: Boolean(photo_url), bundle: inv.bundleOf(p.id), is_bundle: inv.isBundle(p.id),
       photo: photo_url ? `/shop-photo/${p.id}?v=${crypto.createHash('md5').update(photo_url).digest('hex').slice(0, 8)}` : null })) });
   });
 
   app.post('/shop-api/admin/products', ...admP, (req, res) => {
     try {
       const p = cleanProduct(req.body);
-      const r = db.prepare(`INSERT INTO products (name, description, price, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en)
-                            VALUES (@name, @description, @price, @stock, @category, @name_en, @description_en, @category_en, @group_key, @option_label, @option_label_en)`).run(p);
-      res.json({ ok: true, id: r.lastInsertRowid });
-    } catch (e) { res.status(400).json({ error: e.message }); }
+      const id = db.transaction(() => {
+        const r = db.prepare(`INSERT INTO products (name, description, price, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en,
+                              option2_label, option2_label_en, unit, step, min_qty, is_addon, addon_for)
+                              VALUES (@name, @description, @price, 0, @category, @name_en, @description_en, @category_en, @group_key, @option_label, @option_label_en,
+                              @option2_label, @option2_label_en, @unit, @step, @min_qty, @is_addon, @addon_for)`).run(p);
+        const nid = Number(r.lastInsertRowid);
+        if (Array.isArray(req.body.bundle) && req.body.bundle.length) inv.setBundle(nid, req.body.bundle);
+        else inv.setStock(nid, p.stock, 'добавлен в админке');
+        return nid;
+      })();
+      res.json({ ok: true, id });
+    } catch (e) { sendAdmErr(res, e); }
   });
 
   app.post('/shop-api/admin/products/:id', ...admP, (req, res) => {
     try {
-      const p = cleanProduct(req.body);
-      const r = db.prepare(`UPDATE products SET name=@name, description=@description, price=@price, stock=@stock, category=@category,
-                            name_en=@name_en, description_en=@description_en, category_en=@category_en,
-                            group_key=@group_key, option_label=@option_label, option_label_en=@option_label_en WHERE id=@id`)
-        .run({ ...p, id: parseInt(req.params.id, 10) });
-      if (!r.changes) return res.status(404).json({ error: 'Товар не найден' });
-      if (p.stock > 0) checkLowStock(bot);
+      const p = cleanProduct(req.body), id = parseInt(req.params.id, 10);
+      db.transaction(() => {
+        const r = db.prepare(`UPDATE products SET ${COLS_SQL} WHERE id=@id`).run({ ...p, id });
+        if (!r.changes) throw Object.assign(new Error('Товар не найден'), { notFound: true });
+        if (Array.isArray(req.body.bundle)) inv.setBundle(id, req.body.bundle);       // пустой список снимает «набор»
+        if (!inv.isBundle(id)) inv.setStock(id, p.stock, 'правка в админке');          // остаток набора считается по составу
+      })();
+      checkLowStock(bot);
       res.json({ ok: true });
-    } catch (e) { res.status(400).json({ error: e.message }); }
+    } catch (e) { res.status(e.notFound ? 404 : 400).json({ error: e.message }); }
   });
 
   // Изменение остатков по названию товара: {changes:[{name, delta}]}, delta<0 — списать, >0 — вернуть.
-  // Всё или ничего: если хоть одной позиции не хватает, ничего не меняем.
+  // Всё или ничего: если хоть одной позиции не хватает, ничего не меняем. Наборы меняются через состав.
   app.post('/shop-api/admin/stock-delta', ...admP, (req, res) => {
     const list = Array.isArray(req.body.changes) ? req.body.changes.slice(0, 100) : [];
     const find = db.prepare('SELECT id, name, stock FROM products WHERE name = ?');
-    const upd = db.prepare('UPDATE products SET stock = ? WHERE id = ?');
     try {
       const out = db.transaction(() => {
         const applied = [], unknown = [];
@@ -345,9 +378,10 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
           if (!delta) continue;
           const p = find.get(name);
           if (!p) { unknown.push(name); continue; }
+          if (inv.isBundle(p.id)) throw new Error(`«${p.name}» — набор: его остаток считается по составу`);
           const next = p.stock + delta;
           if (next < 0) throw new Error(`Недостаточно на складе: ${p.name} (есть ${p.stock}, нужно ${-delta})`);
-          upd.run(next, p.id);
+          inv.setStock(p.id, next, 'CRM / ручная правка');
           applied.push({ name: p.name, from: p.stock, to: next });
         }
         return { applied, unknown };
@@ -357,10 +391,25 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     } catch (e) { res.status(409).json({ error: e.message }); }
   });
 
+  // Отчёт: присылаем владелице в чат (текст + при file=true подробный Excel)
+  app.post('/shop-api/admin/report', ...adm, async (req, res) => {
+    try {
+      const days = Math.min(366, Math.max(1, parseInt(req.body.days, 10) || 30));
+      const rep = require('./reports');
+      await bot.telegram.sendMessage(process.env.OWNER_CHAT_ID, rep.text(days));
+      if (req.body.file) await bot.telegram.sendDocument(process.env.OWNER_CHAT_ID, { source: await rep.xlsx(days), filename: `otchet-${days}d.xlsx` });
+      res.json({ ok: true });
+    } catch (e) { console.error('Отчёт:', e.message); res.status(500).json({ error: 'Не получилось отправить отчёт' }); }
+  });
+
   app.post('/shop-api/admin/products/:id/delete', ...admP, (req, res) => {
     const id = parseInt(req.params.id, 10);
-    db.prepare('DELETE FROM cart_items WHERE product_id = ?').run(id);
-    db.prepare('DELETE FROM products WHERE id = ?').run(id);
+    db.transaction(() => {
+      db.prepare('DELETE FROM cart_items WHERE product_id = ?').run(id);
+      db.prepare('DELETE FROM bundle_items WHERE bundle_id = ? OR product_id = ?').run(id, id);
+      db.prepare('DELETE FROM products WHERE id = ?').run(id);
+      inv.syncBundles();
+    })();
     res.json({ ok: true });
   });
 

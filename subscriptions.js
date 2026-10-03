@@ -33,8 +33,8 @@ function list(chatId, lang = 'ru') {
   return db.prepare('SELECT * FROM subscriptions WHERE chat_id = ? ORDER BY active DESC, id DESC').all(chatId).map((s) => ({
     id: s.id, interval_days: s.interval_days, next_date: s.next_date, active: Boolean(s.active), method: s.delivery_method,
     items: JSON.parse(s.items).map((i) => {
-      const p = db.prepare('SELECT name, name_en, price FROM products WHERE id = ?').get(i.product_id);
-      return { name: p ? ((lang === 'en' && p.name_en) || p.name) : '—', qty: i.quantity, price: p ? p.price : 0 };
+      const p = db.prepare('SELECT name, name_en, price, unit FROM products WHERE id = ?').get(i.product_id);
+      return { name: p ? ((lang === 'en' && p.name_en) || p.name) : '—', qty: i.quantity, price: p ? p.price : 0, unit: p ? p.unit : null };
     }),
   }));
 }
@@ -82,7 +82,7 @@ async function runDue(bot, now = Date.now()) {
     const tx = L[lang] || L.ru;
     try {
       const items = JSON.parse(s.items).map((i) => {
-        const p = db.prepare('SELECT id, name, name_en, price, stock FROM products WHERE id = ?').get(i.product_id);
+        const p = db.prepare('SELECT id, name, name_en, price, stock, unit FROM products WHERE id = ?').get(i.product_id);
         return { ...i, p };
       });
       const bad = items.find((i) => !i.p || i.p.stock < i.quantity);
@@ -125,7 +125,7 @@ async function runDue(bot, now = Date.now()) {
       }
       db.prepare('UPDATE subscriptions SET last_order_id = ? WHERE id = ?').run(orderId, s.id);
       const code = db.prepare('SELECT order_code FROM orders WHERE id = ?').get(orderId).order_code || orderId;
-      const text = tx.due(code, rs.total, items.map((i) => `• ${(lang === 'en' && i.p.name_en) || i.p.name} × ${i.quantity}`).join('\n'));
+      const text = tx.due(code, rs.total, items.map((i) => `• ${require('./qty').line(i.p, i.quantity, lang)}`).join('\n'));
       await bot.telegram.sendMessage(s.chat_id, text, { reply_markup: { inline_keyboard: [[{ text: tx.pay, url: payment.confirmation.confirmation_url }]] } }).catch(() => {});
       made++;
     } catch (e) { console.error('Подписка', s.id, e.message); }

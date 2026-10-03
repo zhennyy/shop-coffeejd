@@ -178,8 +178,8 @@ function carouselView(chatId, lang, ci, idx) {
   const cat = ci >= 0 && cats[ci] ? cats[ci].category : null;
   if (!cat) ci = -1;
   const products = cat
-    ? db.prepare('SELECT * FROM products WHERE category = ? ORDER BY stock = 0, id').all(cat)
-    : db.prepare('SELECT * FROM products ORDER BY stock = 0, id').all();
+    ? db.prepare('SELECT * FROM products WHERE category = ? AND is_addon = 0 AND unit IS NULL ORDER BY stock = 0, id').all(cat)
+    : db.prepare('SELECT * FROM products WHERE is_addon = 0 AND unit IS NULL ORDER BY stock = 0, id').all();
   if (!products.length) return null;
 
   const n = products.length;
@@ -365,7 +365,7 @@ bot.on('text', async (ctx, next) => {
     const term = ctx.message.text.trim();
     if (!term) return;
     const products = db
-      .prepare('SELECT * FROM products WHERE name LIKE ? OR name_en LIKE ? ORDER BY name LIMIT 20')
+      .prepare('SELECT * FROM products WHERE (name LIKE ? OR name_en LIKE ?) AND is_addon = 0 AND unit IS NULL ORDER BY name LIMIT 20')
       .all(`%${term}%`, `%${term}%`);
     if (!products.length) return ctx.reply(t(lang, 'searchNoResults', term), buildMainMenu(lang));
     for (const p of products) {
@@ -410,7 +410,7 @@ bot.hears([t('ru', 'btnAiPick'), t('en', 'btnAiPick')], (ctx) => {
 
 async function getAiRecommendation(userQuery, lang) {
   const products = db
-    .prepare('SELECT id, name, description, price, category, stock FROM products WHERE stock > 0')
+    .prepare('SELECT id, name, description, price, category, stock FROM products WHERE stock > 0 AND is_addon = 0')
     .all();
 
   const catalogText = products
@@ -507,7 +507,7 @@ async function showCart(ctx) {
   const buttons = [];
   for (const i of items) {
     const displayName = (lang === 'en' && i.name_en) || i.name;
-    text += `${displayName} x${i.quantity} — ${formatPrice(i.price * i.quantity)}\n`;
+    text += `${displayName} ${require('./qty').isWeight(i) ? '— ' + require('./qty').fmt(i, i.quantity, lang) : 'x' + i.quantity} — ${formatPrice(i.price * i.quantity)}\n`;
     buttons.push([
       Markup.button.callback(`➖ ${displayName}`, `dec_${i.product_id}`),
       Markup.button.callback(`❌`, `rm_${i.product_id}`),
@@ -559,7 +559,7 @@ async function showMyOrders(ctx) {
   if (!orders.length) return ctx.reply(t(lang, 'ordersEmpty'), buildMainMenu(lang));
 
   const itemsStmt = db.prepare(
-    `SELECT oi.quantity, p.name, p.name_en FROM order_items oi
+    `SELECT oi.quantity, p.name, p.name_en, p.unit FROM order_items oi
      JOIN products p ON p.id = oi.product_id
      WHERE oi.order_id = ?`
   );
@@ -571,7 +571,7 @@ async function showMyOrders(ctx) {
     const statusLabel = t(lang, 'orderStatus')[statusKey] || statusKey;
     const items = itemsStmt.all(o.id);
     const itemsText = items
-      .map((i) => `• ${(lang === 'en' && i.name_en) || i.name} ×${i.quantity}`)
+      .map((i) => `• ${require('./qty').line(i, i.quantity, lang)}`)
       .join('\n');
     const date = (o.created_at || '').slice(0, 16).replace('T', ' ');
     const cityDisplay = db.translateCity(o.delivery_city, lang);
@@ -752,18 +752,29 @@ bot.command('deldelivery', isOwner, (ctx) => {
 // /stock без аргументов — присылает таблицу склада (CSV для Excel); обратно её можно отправить боту файлом
 bot.command('stock', isOwner, async (ctx, next) => {
   if (ctx.message.text.trim().split(/\s+/).length > 1) return next();
-  const { exportCsv } = require('./stock');
-  await ctx.replyWithDocument({ source: Buffer.from(exportCsv(), 'utf8'), filename: 'sklad.csv' },
-    { caption: '📦 Склад. Откройте в Excel, поменяйте «цена_руб» и «остаток» (id не трогайте), сохраните как CSV и отправьте файл сюда — всё обновится. Новая строка без id создаст товар.' });
+  const { exportXlsx, exportCsv } = require('./stock');
+  const caption = '📦 Склад. Откройте в Excel, поменяйте «цена_руб» и «остаток» (колонку id не трогайте), сохраните и отправьте файл сюда — всё обновится. Новая строка без id создаёт товар. Типы: товар, на вес (цена за 100 г, граммы), доп, набор (состав: id×количество).';
+  await ctx.replyWithDocument({ source: await exportXlsx(), filename: 'sklad.xlsx' }, { caption });
+  await ctx.replyWithDocument({ source: Buffer.from(exportCsv(), 'utf8'), filename: 'sklad.csv' }, { caption: 'То же самое в CSV — если удобнее.' });
+});
+// /report [дней] [file] — отчёт в чат; с «file» — ещё и подробная таблица Excel
+bot.command('report', isOwner, async (ctx) => {
+  const args = ctx.message.text.trim().split(/\s+/).slice(1);
+  const days = parseInt(args.find((a) => /^\d+$/.test(a)), 10) || 30;
+  const reports = require('./reports');
+  await ctx.reply(reports.text(days));
+  if (args.includes('file')) await ctx.replyWithDocument({ source: await reports.xlsx(days), filename: `otchet-${days}d.xlsx` });
 });
 bot.on('document', isOwner, async (ctx) => {
   const d = ctx.message.document;
-  if (!/\.csv$/i.test(d.file_name || '')) return ctx.reply('Для склада пришлите файл .csv (в Excel: Сохранить как → CSV UTF-8).');
-  if (d.file_size > 2e6) return ctx.reply('Файл слишком большой.');
+  const isX = /\.xlsx$/i.test(d.file_name || ''), isC = /\.csv$/i.test(d.file_name || '');
+  if (!isX && !isC) return ctx.reply('Для склада пришлите файл .xlsx или .csv (в Excel: Сохранить как → CSV UTF-8).');
+  if (d.file_size > 5e6) return ctx.reply('Файл слишком большой.');
   try {
-    const { importCsv, reportText } = require('./stock');
-    const text = await require('axios').get(String(await ctx.telegram.getFileLink(d.file_id)), { responseType: 'text', timeout: 15000 }).then((r) => r.data);
-    const r = importCsv(text);
+    const { importCsv, importXlsx, reportText } = require('./stock');
+    const link = String(await ctx.telegram.getFileLink(d.file_id));
+    const r = isX ? await importXlsx(Buffer.from((await require('axios').get(link, { responseType: 'arraybuffer', timeout: 20000 })).data))
+                  : importCsv(await require('axios').get(link, { responseType: 'text', timeout: 15000 }).then((x) => x.data));
     await ctx.reply(reportText(r));
     checkLowStock(bot);
   } catch (e) { ctx.reply('Не получилось: ' + e.message); }
@@ -773,8 +784,9 @@ bot.command('stock', isOwner, (ctx) => {
   // формат: /stock <id_товара> <новый_остаток>
   const [, id, qty] = ctx.message.text.split(' ');
   if (!id || !qty) return ctx.reply('Формат: /stock <id_товара> <новый_остаток>');
-  db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(parseInt(qty), parseInt(id));
-  ctx.reply(`Остаток товара #${id} обновлён: ${qty}`);
+  const n = parseInt(qty, 10);
+  if (!(n >= 0) || !require('./inventory').setStock(parseInt(id, 10), n, 'команда /stock')) return ctx.reply('Не получилось: проверьте номер товара и число. Остаток наборов считается сам по составу.');
+  ctx.reply(`Остаток товара #${id} обновлён: ${n}`);
   checkLowStock(bot);
 });
 

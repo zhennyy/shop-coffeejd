@@ -118,7 +118,7 @@ const checkoutScene = new Scenes.WizardScene(
       const buyerName = db.getName(ctx.chat.id);
       let summary = buyerName ? `${t(lang, 'summaryGreeting', buyerName)}\n\n` : '';
       summary += `${t(lang, 'summaryAddress', ctx.wizard.state.address)}\n\n${t(lang, 'summaryOrderHeader')}\n`;
-      for (const i of items) summary += `${(lang === 'en' && i.name_en) || i.name} x${i.quantity}\n`;
+      for (const i of items) summary += `${require('../qty').line(i, i.quantity, lang)}\n`;
       summary += t(lang, 'itemsSum', (total / 100).toFixed(0) + ' ₽');
       if (discountPercent > 0) {
         summary += `\n${t(lang, 'promoLine', promoCode, discountPercent)}`;

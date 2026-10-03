@@ -17,7 +17,7 @@ async function push(orderId) {
       order: {
         id: String(o.id), code: o.code, status: o.base, total: o.total, delivery_cost: o.delivery_cost || 0,
         address: o.address || '', track: o.track || '',
-        items: o.items.map((i) => ({ name: i.name, qty: i.quantity, price: i.price })),
+        items: o.items.map((i) => { const u = require('./qty').asUnit({ name: i.name, unit: i.unit }, i.quantity, i.price); return { name: u.name, qty: u.quantity, price: u.price }; }),
       },
     };
     for (let attempt = 1; attempt <= 3; attempt++) {

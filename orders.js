@@ -1,6 +1,7 @@
 // orders.js — жизнь заказа после оформления: статусы, уведомления покупателю и владелице, склад, оценки.
 // Используется и сервером витрины (webhook.js), и ботом (кнопки под уведомлением владелице).
 const db = require('./db');
+const inv = require('./inventory');
 
 // Порядок статусов. «Деньги получены» — это всё, что начиная с paid (кроме отмены).
 const FLOW = ['paid', 'assembling', 'shipped', 'delivered'];
@@ -34,7 +35,7 @@ function getOrder(id) {
   if (!o) return null;
   o.base = base(o.status);
   o.code = o.order_code || String(o.id);
-  o.items = db.prepare(`SELECT oi.rowid AS rid, oi.product_id, oi.quantity, oi.price, oi.stock_taken, p.name, p.name_en FROM order_items oi
+  o.items = db.prepare(`SELECT oi.rowid AS rid, oi.product_id, oi.quantity, oi.price, oi.stock_taken, p.name, p.name_en, p.unit FROM order_items oi
                         LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`).all(id);
   return o;
 }
@@ -54,7 +55,7 @@ function tracker(o, lang) {
 }
 
 function itemsText(o, lang) {
-  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} × ${i.quantity} — ${rub(i.price * i.quantity)}`);
+  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} ${i.unit === 'g' ? '— ' + i.quantity + (lang === 'en' ? ' g' : ' г') : '× ' + i.quantity} — ${rub(i.price * i.quantity)}`);
   if (o.discount_percent) lines.push(`${lang === 'en' ? 'Promo' : 'Промокод'} ${esc(o.promo_code || '')} −${o.discount_percent}%`);
   if (!isPickup(o)) lines.push(`${lang === 'en' ? 'Delivery' : 'Доставка'} — ${o.delivery_cost ? rub(o.delivery_cost) : (lang === 'en' ? 'free' : 'бесплатно')}`);
   lines.push(`<b>${lang === 'en' ? 'Total' : 'Итого'} ${rub(o.total)}</b>`);
@@ -153,9 +154,7 @@ function takeStock(o) {
   for (const i of o.items) {
     const need = i.quantity - (i.stock_taken || 0);
     if (need <= 0) continue;
-    const have = db.prepare('SELECT stock FROM products WHERE id = ?').get(i.product_id)?.stock ?? 0;
-    const take = Math.max(0, Math.min(have, need));
-    if (take) db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(take, i.product_id);
+    const take = inv.take(i.product_id, need, 'продажа', o.id);
     db.prepare('UPDATE order_items SET stock_taken = stock_taken + ? WHERE rowid = ?').run(take, i.rid);
     if (take < need) short.push(`${i.name || 'товар'} — не хватило ${need - take} шт.`);
   }
@@ -165,7 +164,7 @@ function takeStock(o) {
 function returnStock(o) {
   for (const i of o.items) {
     if (!i.stock_taken) continue;
-    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(i.stock_taken, i.product_id);
+    inv.give(i.product_id, i.stock_taken, 'отмена заказа', o.id);
     db.prepare('UPDATE order_items SET stock_taken = 0 WHERE rowid = ?').run(i.rid);
   }
 }

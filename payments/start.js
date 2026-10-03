@@ -9,8 +9,8 @@ async function startPayment(orderId) {
   const code = o.order_code || String(o.id);
   let rc;
   if (receipt.enabled()) {
-    const items = db.prepare(`SELECT p.name, oi.quantity, oi.price FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`).all(orderId)
-      .map((i) => ({ name: i.name || 'Товар', quantity: i.quantity, price: i.price }));
+    const items = db.prepare(`SELECT p.name, p.unit, oi.quantity, oi.price FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`).all(orderId)
+      .map((i) => require('../qty').asUnit({ name: i.name || 'Товар', unit: i.unit }, i.quantity, i.price));
     rc = receipt.buildReceipt({ items, goodsTotal: o.total - (o.delivery_cost || 0), delivery: o.delivery_cost || 0, contact: receipt.contactFrom(o.contact) });
   }
   const payment = await createPayment(orderId, o.total / 100, `Заказ #${code}`, rc);

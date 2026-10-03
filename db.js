@@ -177,6 +177,29 @@ if (!productColumns.includes('group_key')) db.exec('ALTER TABLE products ADD COL
 if (!productColumns.includes('option_label')) db.exec('ALTER TABLE products ADD COLUMN option_label TEXT');
 if (!productColumns.includes('option_label_en')) db.exec('ALTER TABLE products ADD COLUMN option_label_en TEXT');
 
+// вторая опция (например, размер + цвет): option_label — первая, option2_label — вторая
+if (!productColumns.includes('option2_label')) db.exec('ALTER TABLE products ADD COLUMN option2_label TEXT');
+if (!productColumns.includes('option2_label_en')) db.exec('ALTER TABLE products ADD COLUMN option2_label_en TEXT');
+// допы: обычный товар со своей ценой и остатком (упаковка, помол), который витрина предлагает в карточке основного товара.
+// addon_for: '*' — ко всем, иначе названия основных товаров/групп через «|»
+if (!productColumns.includes('is_addon')) db.exec('ALTER TABLE products ADD COLUMN is_addon INTEGER NOT NULL DEFAULT 0');
+if (!productColumns.includes('addon_for')) db.exec('ALTER TABLE products ADD COLUMN addon_for TEXT');
+// наборы: набор — обычный товар, состав лежит здесь; остаток набора считается по составу, а при оплате списываются компоненты
+db.exec(`CREATE TABLE IF NOT EXISTS bundle_items (
+  bundle_id INTEGER NOT NULL, product_id INTEGER NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (bundle_id, product_id)
+);
+CREATE TABLE IF NOT EXISTS stock_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
+  product_id INTEGER NOT NULL, delta INTEGER NOT NULL, after INTEGER NOT NULL, reason TEXT NOT NULL, order_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_stock_log_ts ON stock_log(ts);`);
+
+// продажа на вес: unit='g' — количество в граммах, price — копеек за 1 г, step — шаг выбора, min_qty — минимум
+if (!productColumns.includes('unit')) db.exec('ALTER TABLE products ADD COLUMN unit TEXT');
+if (!productColumns.includes('step')) db.exec('ALTER TABLE products ADD COLUMN step INTEGER NOT NULL DEFAULT 1');
+if (!productColumns.includes('min_qty')) db.exec('ALTER TABLE products ADD COLUMN min_qty INTEGER NOT NULL DEFAULT 1');
+
 // одноразовый бэкфилл английских переводов для стартовых демо-товаров
 // (если они уже есть в базе без name_en — например, база создана до появления двуязычности)
 const seedTranslations = {};
