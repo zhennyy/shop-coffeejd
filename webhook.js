@@ -242,6 +242,17 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   const isOwnerId = (id) => Boolean(process.env.OWNER_CHAT_ID) && String(id) === String(process.env.OWNER_CHAT_ID);
   const ownerOnly = (req, res, next) => (isOwnerId(req.chatId) ? next() : res.status(403).json({ error: 'Только для владелицы' }));
   const adm = [shopAuth, ownerOnly];
+  // CRM управляет каталогом по общему секрету (тот же CRM_SECRET, что и для заказов). Только маршруты товаров.
+  const crmOrTg = (req, res, next) => {
+    const given = req.get('x-webhook-secret');
+    if (!given) return shopAuth(req, res, next);
+    const want = process.env.CRM_SECRET || '';
+    const a = Buffer.from(given), b = Buffer.from(want);
+    if (!want || a.length !== b.length || !crypto.timingSafeEqual(a, b)) return res.status(401).json({ error: 'Неверный секрет' });
+    req.chatId = process.env.OWNER_CHAT_ID;
+    next();
+  };
+  const admP = [crmOrTg, ownerOnly];
   const toKop = (v) => Math.round(parseFloat(String(v).replace(',', '.').replace(/\s/g, '')) * 100);
   const cleanProduct = (b) => {
     const p = {
@@ -269,13 +280,13 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     return p;
   };
 
-  app.get('/shop-api/admin/products', ...adm, (req, res) => {
+  app.get('/shop-api/admin/products', ...admP, (req, res) => {
     const rows = db.prepare('SELECT * FROM products ORDER BY category, id').all();
     res.json({ products: rows.map(({ photo_url, ...p }) => ({ ...p, has_photo: Boolean(photo_url),
       photo: photo_url ? `/shop-photo/${p.id}?v=${crypto.createHash('md5').update(photo_url).digest('hex').slice(0, 8)}` : null })) });
   });
 
-  app.post('/shop-api/admin/products', ...adm, (req, res) => {
+  app.post('/shop-api/admin/products', ...admP, (req, res) => {
     try {
       const p = cleanProduct(req.body);
       const r = db.prepare(`INSERT INTO products (name, description, price, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en)
@@ -284,7 +295,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
-  app.post('/shop-api/admin/products/:id', ...adm, (req, res) => {
+  app.post('/shop-api/admin/products/:id', ...admP, (req, res) => {
     try {
       const p = cleanProduct(req.body);
       const r = db.prepare(`UPDATE products SET name=@name, description=@description, price=@price, stock=@stock, category=@category,
@@ -297,7 +308,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
-  app.post('/shop-api/admin/products/:id/delete', ...adm, (req, res) => {
+  app.post('/shop-api/admin/products/:id/delete', ...admP, (req, res) => {
     const id = parseInt(req.params.id, 10);
     db.prepare('DELETE FROM cart_items WHERE product_id = ?').run(id);
     db.prepare('DELETE FROM products WHERE id = ?').run(id);
@@ -319,7 +330,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   });
 
   // Фото по ссылке (https), например из генератора картинок — сервер сам скачает и покажет
-  app.post('/shop-api/admin/products/:id/photo-url', ...adm, (req, res) => {
+  app.post('/shop-api/admin/products/:id/photo-url', ...admP, (req, res) => {
     const id = parseInt(req.params.id, 10);
     const url = String(req.body.url || '').trim();
     if (!/^https:\/\/[^\s]+$/i.test(url) || url.length > 1000) return res.status(400).json({ error: 'Нужна ссылка, начинающаяся с https://' });
