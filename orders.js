@@ -193,6 +193,7 @@ async function changeStatus(bot, id, status, { track } = {}) {
       .run(status, newTrack, nowPaid ? 1 : 0, id);
   })();
   const updated = getOrder(id);
+  require('./crm').push(id);
   await notifyBuyer(bot, updated);
   await warnShortage(bot, updated, short);
   return updated;
@@ -217,6 +218,7 @@ async function markPaid(bot, orderId, paymentId) {
   })();
   if (!done) return false;
   const paid = getOrder(orderId);
+  require('./crm').push(orderId);
   await notifyBuyer(bot, paid);
   await notifyOwnerNew(bot, paid);
   await warnShortage(bot, paid, short);

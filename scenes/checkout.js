@@ -278,6 +278,7 @@ function createPendingOrder(
     'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)'
   );
   for (const i of items) insertItem.run(orderId, i.product_id, i.quantity, i.price);
+  require('../crm').push(orderId);
   return orderId;
 }
 
