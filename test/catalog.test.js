@@ -129,3 +129,27 @@ test('отчёты: продажи, остатки, движение; отпра
   assert.ok(S.sent.some((m) => /Отчёт за 7/.test(m.text)));
   assert.equal((await S.call(U, 'POST', '/shop-api/admin/report', { days: 7 })).status, 403);
 });
+
+test('подписка и повтор заказа с весовым товаром и набором', async () => {
+  const subs = require('../subscriptions');
+  const w = await mk({ name: 'Весовой для подписки', unit: 'g', price: 500, stock: 3000, step: 50, min_qty: 100 });
+  const a = await mk({ name: 'Компонент П', price: 100, stock: 10 });
+  const set = await mk({ name: 'Набор для подписки', price: 700, stock: 0, bundle: [{ product_id: a, qty: 2 }] });
+  const U2 = 6100;
+  const r = await buy(U2, [[w, 250], [set, 1]]);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await paySucceed();
+  assert.equal(row(w).stock, 2750); assert.equal(row(a).stock, 8);
+  const rep = await S.call(U2, 'POST', `/shop-api/orders/${r.body.id}/repeat`);
+  assert.equal(rep.status, 200); assert.equal(rep.body.cart[w], 250);
+  const c = await S.call(U2, 'POST', '/shop-api/subscriptions', { order_id: r.body.id, days: 7 });
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  const list = await S.call(U2, 'GET', '/shop-api/subscriptions');
+  assert.equal(list.body.subscriptions[0].items.find((i) => i.name.includes('развес') || i.name.includes('Весовой')).unit, 'g');
+  S.db.prepare('UPDATE subscriptions SET next_date = ? WHERE id = ?').run('2000-01-01', c.body.id);
+  S.sent.length = 0;
+  assert.equal(await subs.runDue(S.bot), 1);
+  assert.ok(S.sent.some((m) => m.chat === U2 && /250 г/.test(m.text)), 'в сообщении граммы');
+  const o = S.db.prepare('SELECT total FROM orders WHERE chat_id = ? ORDER BY id DESC').get(U2);
+  assert.equal(o.total, 250 * 500 + 70000);
+});

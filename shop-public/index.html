@@ -223,6 +223,11 @@
   .steps div.now{color:var(--text);font-weight:700}
   .pill.assembling{background:var(--accent-soft);color:var(--accent)}
   .track{margin-top:8px;font-size:14px} .stars{margin-top:6px;color:#f59f00;letter-spacing:2px}
+  .addons{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
+  .addons h3{margin:0 0 6px;font-size:15px}
+  .arow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0}
+  .arow .an{font-weight:600;font-size:14px}.arow .ap{color:var(--muted);font-size:13px}
+  .bundle{font-size:13px;color:var(--muted);margin:6px 0}
 </style>
 </head>
 <body>
@@ -305,7 +310,15 @@ const ds = p => (lang === 'en' && p.description_en) || p.description || '';
 const ct = p => (lang === 'en' && p.category_en) || p.category || '';
 const baseOf = p => !p.group_key ? nm(p) : (lang === 'en' && p.name_en ? p.name_en.split(' · ')[0] : p.group_key);
 const optOf = p => (lang === 'en' && p.option_label_en) || p.option_label || '';
-const siblings = p => p.group_key ? products.filter(x => x.group_key === p.group_key) : [p];
+const siblings = p => p.group_key ? products.filter(x => x.group_key === p.group_key && !x.is_addon) : [p];
+const isW = p => p && p.unit === 'g';
+const stepOf = p => isW(p) ? Math.max(1, p.step || 1) : 1;
+const minOf = p => isW(p) ? Math.max(1, p.min_qty || 1) : 1;
+const gram = n => lang === 'en' ? (n >= 1000 ? (n / 1000).toLocaleString('en-GB') + ' kg' : n + ' g') : (n >= 1000 ? (n / 1000).toLocaleString('ru-RU') + ' кг' : n + ' г');
+const qtyText = (p, q) => isW(p) ? gram(q) : String(q);
+const priceText = p => isW(p) ? `${rub(p.price * 100)} / 100 ${lang === 'en' ? 'g' : 'г'}` : rub(p.price);
+const opt2Of = p => (lang === 'en' && p.option2_label_en) || p.option2_label || '';
+const addonsFor = p => products.filter(a => a.is_addon && a.stock > 0 && a.id !== p.id && String(a.addon_for || '*').split('|').map(x => x.trim()).some(k => k === '*' || k === p.group_key || k === p.name));
 const byId = id => products.find(x => x.id == id);
 const when = s => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + 'Z'); return isNaN(d) ? '' : d.toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
 
@@ -347,14 +360,14 @@ function applyLang() {
 /* ---------- каталог ---------- */
 function stockTag(p) {
   if (p.stock <= 0) return `<span class="tag out">${L.out}</span>`;
-  if (p.stock <= 3) return `<span class="tag low">${L.low(p.stock)}</span>`;
+  if (isW(p) ? p.stock <= 1000 : p.stock <= 3) return `<span class="tag low">${L.low(isW(p) ? gram(p.stock) : p.stock)}</span>`;
   return '';
 }
 function ctrl(p) {
   const q = cart[p.id] || 0;
-  if (p.stock <= 0) return `<button class="add" disabled>+</button>`;
+  if (p.stock < minOf(p)) return `<button class="add" disabled>+</button>`;
   if (!q) return `<button class="add" data-add="${p.id}" aria-label="${L.addBtn}">+</button>`;
-  return `<div class="step"><button data-dec="${p.id}">−</button><span>${q}</span><button data-add="${p.id}">+</button></div>`;
+  return `<div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>`;
 }
 const cardHtml = p => `
   <article class="card ${p.stock <= 0 ? 'out' : ''}" data-open="${p.id}">
@@ -362,18 +375,18 @@ const cardHtml = p => `
     <div class="info">
       ${ct(p) ? `<div class="cat">${esc(ct(p))}</div>` : ''}
       <div class="name">${esc(baseOf(p))}</div>
-      ${p.group_key && siblings(p).length > 1 ? `<div class="row"><div class="price">${L.from} ${rub(Math.min(...siblings(p).map(x => x.price)))}</div><span class="vcount">${siblings(p).length} ${L.variants}</span></div>`
-      : `<div class="row"><div class="price">${rub(p.price)}</div><div data-ctrl="${p.id}">${ctrl(p)}</div></div>`}
+      ${p.group_key && siblings(p).length > 1 ? `<div class="row"><div class="price">${L.from} ${priceText(siblings(p).reduce((a, x) => (x.price * (isW(x) ? 100 : 1) < a.price * (isW(a) ? 100 : 1) ? x : a)))}</div><span class="vcount">${siblings(p).length} ${L.variants}</span></div>`
+      : `<div class="row"><div class="price">${priceText(p)}</div><div data-ctrl="${p.id}">${ctrl(p)}</div></div>`}
     </div>
   </article>`;
 function renderChips() {
-  const cats = [...new Map(products.filter(p => p.category).map(p => [p.category, ct(p)])).entries()];
+  const cats = [...new Map(products.filter(p => p.category && !p.is_addon).map(p => [p.category, ct(p)])).entries()];
   $('chips').innerHTML = [`<button class="chip ${cat === null ? 'on' : ''}" data-c="">${L.all}</button>`]
     .concat(cats.map(([k, v]) => `<button class="chip ${cat === k ? 'on' : ''}" data-c="${esc(k)}">${esc(v)}</button>`)).join('');
 }
 function renderGrid() {
   const q = query.trim().toLowerCase();
-  const list = products.filter(p => (!cat || p.category === cat) &&
+  const list = products.filter(p => !p.is_addon && (!cat || p.category === cat) &&
     (!q || [p.name, p.name_en, p.description, p.category, p.category_en].join(' ').toLowerCase().includes(q)));
   // варианты одного товара — одна карточка (берём первый в наличии)
   const seen = new Set();
@@ -384,7 +397,7 @@ function renderGrid() {
 /* ---------- корзина ---------- */
 function cartTotals() {
   let n = 0, sum = 0;
-  for (const [id, q] of Object.entries(cart)) { const p = byId(id); if (p) { n += q; sum += q * p.price; } }
+  for (const [id, q] of Object.entries(cart)) { const p = byId(id); if (p) { n += isW(p) ? 1 : q; sum += q * p.price; } }
   return { n, sum };
 }
 function renderCart() {
@@ -394,8 +407,8 @@ function renderCart() {
   $('v-cart').innerHTML = `<h1>${L.cartTitle}</h1>` + (lines.length ? lines.map(({ p, q }) => `
       <div class="line">
         <div class="thumb" data-open="${p.id}">${photo(p)}</div>
-        <div class="mid"><div class="name">${esc(nm(p))}</div><div class="price">${rub(p.price * q)}</div></div>
-        <div class="step"><button data-dec="${p.id}">−</button><span>${q}</span><button data-add="${p.id}">+</button></div>
+        <div class="mid"><div class="name">${esc(nm(p))}${isW(p) ? ', ' + gram(q) : ''}</div><div class="price">${rub(p.price * q)}</div></div>
+        <div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>
       </div>`).join('') + `
       <div class="total"><span>${L.total}</span><b>${rub(sum)}</b></div>
       ${inTg ? '' : `<button class="btn" data-checkout>${L.checkout(rub(sum))}</button>`}
@@ -420,7 +433,10 @@ function refresh(id) {
 }
 async function change(id, delta) {
   const p = byId(id); if (!p) return;
-  const q = Math.max(0, (cart[id] || 0) + delta);
+  const cur = cart[id] || 0;
+  let q;
+  if (isW(p)) q = delta > 0 ? (cur ? cur + stepOf(p) : minOf(p)) : (cur - stepOf(p) < minOf(p) ? 0 : cur - stepOf(p));
+  else q = Math.max(0, cur + delta);
   if (q > p.stock) { toast(L.noMore); return; }
   const prev = cart[id] || 0;
   if (q) cart[id] = q; else delete cart[id];
@@ -448,7 +464,7 @@ async function loadOrders() {
   const subsHtml = subsData.subscriptions.length ? `<div class="box"><h3>Регулярные заказы</h3>${subsData.subscriptions.map(x => `
       <div class="sub" style="padding:8px 0;border-top:1px solid var(--line,#eee)">
         <div><b>${dayName(x.interval_days)}</b>${x.active ? ` · следующий ${esc(x.next_date.split('-').reverse().join('.'))}` : ' · на паузе'}</div>
-        <div class="note" style="text-align:left">${x.items.map(i => esc(i.name) + ' × ' + i.qty).join(', ')}</div>
+        <div class="note" style="text-align:left">${x.items.map(i => esc(i.name) + (i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty)).join(', ')}</div>
         <div class="seg" style="margin-top:6px;flex-wrap:wrap">
           ${x.active ? `<button data-subact="skip" data-sub="${x.id}">Пропустить раз</button><button data-subact="pause" data-sub="${x.id}">Пауза</button>` : `<button data-subact="resume" data-sub="${x.id}">Возобновить</button>`}
           <button data-subact="delete" data-sub="${x.id}">Отменить</button>
@@ -461,7 +477,7 @@ async function loadOrders() {
       <div class="top"><span class="code">№ ${esc(o.code)}</span><span class="pill ${esc(o.status)}">${esc(o.statusLabel)}</span></div>
       ${o.step >= 0 ? `<div class="steps">${(lang === 'en' ? ['Paid', 'Packing', o.pickup ? 'Ready' : 'Shipped', o.pickup ? 'Picked up' : 'Delivered'] : ['Оплачен', 'Собираем', o.pickup ? 'Готов' : 'Отправлен', o.pickup ? 'Получен' : 'Доставлен'])
         .map((n, i) => `<div class="${i < o.step || o.step === 3 ? 'done' : i === o.step ? 'now' : ''}">${n}</div>`).join('')}</div>` : ''}
-      <ul>${o.items.map(i => `<li><span>${esc(i.name)} × ${i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
+      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
         ${o.delivery_cost ? `<li><span>${L.delivery}</span><span>${rub(o.delivery_cost)}</span></li>` : ''}</ul>
       <div class="sum"><span>${L.total}</span><span>${rub(o.total)}</span></div>
       <div class="meta">${esc(when(o.created_at))}${o.address ? ' · ' + esc(o.address) : ''}</div>
@@ -490,13 +506,27 @@ async function aiAsk() {
 let openId = null;
 function renderSheet() {
   const p = byId(openId); if (!p) return;
-  const stock = p.stock > 0 ? `<div class="stock" style="color:var(--ok)">✓ ${L.inStock(p.stock)}</div>` : `<div class="stock" style="color:var(--bad)">${L.out}</div>`;
+  const stock = p.stock > 0 ? `<div class="stock" style="color:var(--ok)">✓ ${isW(p) ? (lang === 'en' ? 'In stock: ' : 'В наличии: ') + gram(p.stock) : L.inStock(p.stock)}</div>` : `<div class="stock" style="color:var(--bad)">${L.out}</div>`;
   const q = cart[p.id] || 0;
-  const act = p.stock <= 0 ? '' : q
-    ? `<div class="step"><button data-dec="${p.id}">−</button><span>${q}</span><button data-add="${p.id}">+</button></div>`
+  const act = p.stock < minOf(p) ? '' : q
+    ? `<div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>`
     : `<button class="add" data-add="${p.id}">${L.addBtn}</button>`;
   const sib = siblings(p);
-  const opts = sib.length > 1 ? `<div class="opts">${sib.map(x => `<button class="chip ${x.id === p.id ? 'on' : ''} ${x.stock <= 0 ? 'off' : ''}" data-variant="${x.id}">${esc(optOf(x))}</button>`).join('')}</div>` : '';
+  // один или два ряда выбора: первый параметр (вес) и второй (упаковка/цвет); при смене подбираем товар с таким же вторым значением
+  const has2 = sib.some(x => x.option2_label);
+  const uniq1 = [...new Map(sib.map(x => [x.option_label, x])).values()];
+  const uniq2 = [...new Map(sib.filter(x => x.option2_label).map(x => [x.option2_label, x])).values()];
+  const pick = (o1, o2) => sib.find(x => x.option_label === o1 && (x.option2_label || '') === (o2 || '')) || null;
+  const chip = (label, on, target, off) => `<button class="chip ${on ? 'on' : ''} ${off ? 'off' : ''}" data-variant="${target.id}">${esc(label)}</button>`;
+  const opts = sib.length <= 1 ? '' : has2
+    ? `<div class="opts">${uniq1.map(x => { const t = pick(x.option_label, p.option2_label) || sib.find(y => y.option_label === x.option_label); return chip(optOf(x), x.option_label === p.option_label, t, t.stock <= 0); }).join('')}</div>
+       <div class="opts">${uniq2.map(x => { const t = pick(p.option_label, x.option2_label) || sib.find(y => y.option2_label === x.option2_label); return chip(opt2Of(x), x.option2_label === p.option2_label, t, t.stock <= 0); }).join('')}</div>`
+    : `<div class="opts">${sib.map(x => chip(optOf(x), x.id === p.id, x, x.stock <= 0)).join('')}</div>`;
+  const adds = addonsFor(p);
+  const addHtml = adds.length ? `<div class="addons"><h3>${lang === 'en' ? 'Add to your order' : 'Добавить к заказу'}</h3>${adds.map(a => `
+      <div class="arow"><div><div class="an">${esc(nm(a))}</div><div class="ap">+ ${priceText(a)}</div></div><div data-ctrl="${a.id}">${ctrl(a)}</div></div>`).join('')}</div>` : '';
+  const bundleHtml = p.bundle && p.bundle.length ? `<div class="bundle"><b>${lang === 'en' ? 'Set includes' : 'В наборе'}:</b> ${p.bundle.map(b => esc((lang === 'en' && b.name_en) || b.name) + (b.unit === 'g' ? ' — ' + gram(b.qty) : ' × ' + b.qty)).join('; ')}</div>` : '';
+  const weightHint = isW(p) ? `<div class="note" style="text-align:left;margin:4px 0">${lang === 'en' ? `Choose any amount from ${gram(minOf(p))} in steps of ${gram(stepOf(p))}` : `Выберите любое количество от ${gram(minOf(p))} с шагом ${gram(stepOf(p))}`}${q ? ` · ${lang === 'en' ? 'Total' : 'Сумма'}: <b>${rub(p.price * q)}</b>` : ''}</div>` : '';
   $('sheet').innerHTML = `<button class="x" data-close>✕</button>
     <div class="big">${photo(p)}</div>
     <div class="body">
@@ -504,8 +534,11 @@ function renderSheet() {
       <h2>${esc(baseOf(p))}</h2>
       ${opts}
       ${ds(p) ? `<p>${esc(ds(p))}</p>` : ''}
+      ${bundleHtml}
       ${stock}
-      <div class="act"><div class="price">${rub(p.price)}</div>${act}</div>
+      ${weightHint}
+      <div class="act"><div class="price">${priceText(p)}</div>${act}</div>
+      ${addHtml}
     </div>`;
 }
 function openSheet(id) { openId = id; renderSheet(); document.body.classList.add('open'); tg?.BackButton?.show(); }
@@ -587,13 +620,13 @@ async function loadAdmin() {
 /* — товары — */
 function renderAdmProducts() {
   const noPhoto = admProducts.filter(p => !p.has_photo).length;
-  $('admBody').innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" data-edit="new" style="flex:2">＋ Новый товар</button><button class="btn ghost" data-backup style="flex:1">📦 Копия</button></div>` +
+  $('admBody').innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" data-edit="new" style="flex:2">＋ Новый товар</button><button class="btn ghost" data-backup style="flex:1">📦 Копия</button><button class="btn ghost" data-report style="flex:1">📊 Отчёт</button></div>` +
     (noPhoto ? `<div class="note" style="margin:0 0 10px">Без фото: ${noPhoto} — нажмите на товар и «📷 Фото»</div>` : '') +
     admProducts.map(p => `
     <div class="aline" data-edit="${p.id}">
       <div class="thumb">${photo(p)}</div>
       <div class="mid"><div class="t">${esc(p.name)}</div>
-        <div class="s">${rub(p.price)} · ${p.stock > 0 ? (p.stock <= 3 ? `<span class="warn">осталось ${p.stock}</span>` : `${p.stock} шт.`) : '<span class="warn">нет в наличии</span>'}${p.category ? ' · ' + esc(p.category) : ''}${p.has_photo ? '' : ' · <span class="warn">без фото</span>'}</div></div>
+        <div class="s">${p.is_addon ? '<b>доп</b> · ' : ''}${p.is_bundle ? '<b>набор</b> · ' : ''}${p.unit === 'g' ? '<b>на вес</b> · ' + rub(p.price * 100) + '/100 г' : rub(p.price)} · ${p.stock > 0 ? ((p.unit === 'g' ? p.stock <= 1000 : p.stock <= 3) ? `<span class="warn">осталось ${p.unit === 'g' ? gram(p.stock) : p.stock}</span>` : (p.unit === 'g' ? gram(p.stock) : `${p.stock} шт.`)) : '<span class="warn">нет в наличии</span>'}${p.category ? ' · ' + esc(p.category) : ''}${p.has_photo ? '' : ' · <span class="warn">без фото</span>'}</div></div>
       <span style="color:var(--muted)">›</span>
     </div>`).join('');
 }
@@ -602,15 +635,33 @@ function openEditor(id) {
   let p = id === 'new' ? { name: '', price: '', stock: 1, category: '', description: '' } : admProducts.find(x => x.id == id);
   if (!p) return;
   if (p.group_key) p = { ...p, name: p.group_key, name_en: (p.name_en || '').split(' · ')[0] };
-  const f = (k, label, type = 'text', extra = '') => `<label>${label}</label><input name="${k}" type="${type}" value="${esc(k === 'price' && p.price ? Math.round(p.price / 100) : p[k] ?? '')}" ${extra}>`;
+  const f = (k, label, type = 'text', extra = '') => `<label>${label}</label><input name="${k}" type="${type}" value="${esc(k === 'price' && p.price ? (p.unit === 'g' ? p.price : p.price / 100) : p[k] ?? '')}" ${extra}>`;
+  edBundle = (p.bundle || []).map(b => ({ product_id: b.product_id, qty: b.qty }));
   $('sheet').innerHTML = `<button class="x" data-close>✕</button>
     ${id === 'new' ? '' : `<div class="big photoEdit">${photo(p)}<button class="up" data-photo="${p.id}">📷 ${p.has_photo ? 'Заменить фото' : 'Добавить фото'}</button></div>`}
     <form class="body form" id="pform" onsubmit="return false">
       <h2>${id === 'new' ? 'Новый товар' : 'Редактирование'}</h2>
       ${id === 'new' ? '' : `<details><summary>Фото по ссылке</summary><div style="display:flex;gap:8px;margin-top:8px"><input id="photoUrl" placeholder="https://…" inputmode="url"><button class="btn" style="width:auto;padding:0 16px" data-purl="${p.id}">OK</button></div></details>`}
       ${f('name', 'Название')}
-      <div class="two"><div>${f('price', 'Цена, ₽', 'number', 'inputmode="numeric" min="1"')}</div><div>${f('stock', 'Остаток, шт.', 'number', 'inputmode="numeric" min="0"')}</div></div>
-      ${f('option_label', 'Вариант (например «250 г»; пусто — без вариантов)')}
+      <div class="two"><div>${f('price', p.unit === 'g' ? 'Цена за 100 г, ₽ (целая)' : 'Цена, ₽ (для весового — за 100 г)', 'number', 'inputmode="decimal" min="1" step="any"')}</div><div>${f('stock', p.unit === 'g' ? 'Остаток, г' : 'Остаток, шт. (для весового — граммы)', 'number', 'inputmode="numeric" min="0"' + (p.is_bundle ? ' disabled title="Считается по составу набора"' : ''))}</div></div>
+      ${p.is_bundle ? '<div class="note" style="text-align:left">Остаток набора считается сам по составу.</div>' : ''}
+      ${f('option_label', 'Параметр 1 (например вес «250 г»; пусто — без вариантов)')}
+      ${f('option2_label', 'Параметр 2 (необязательно: «Пакет», «Коробка», цвет)')}
+      <details ${p.unit === 'g' ? 'open' : ''}><summary>Продажа на вес</summary>
+        <label class="line2"><span>Покупатель выбирает граммы</span><span class="sw"><input type="checkbox" id="f_w" ${p.unit === 'g' ? 'checked' : ''}><i></i></span></label>
+        <div class="two"><div>${f('step', 'Шаг, г', 'number', 'inputmode="numeric" min="1"')}</div><div>${f('min_qty', 'Минимум, г', 'number', 'inputmode="numeric" min="1"')}</div></div>
+        <div class="note" style="text-align:left">Цена задаётся за 100 г целыми рублями, остаток считается в граммах. Пример: шаг 50, минимум 100.</div>
+      </details>
+      <details ${p.is_addon ? 'open' : ''}><summary>Доп к другим товарам</summary>
+        <label class="line2"><span>Это доп (упаковка, помол)</span><span class="sw"><input type="checkbox" id="f_addon" ${p.is_addon ? 'checked' : ''}><i></i></span></label>
+        <label>К каким товарам предлагать (названия через | ; * — ко всем)</label><input name="addon_for" value="${esc(p.addon_for || '*')}">
+        <div class="note" style="text-align:left">Доп не показывается в каталоге: покупатель видит его в карточке подходящего товара.</div>
+      </details>
+      <details ${(p.bundle || []).length ? 'open' : ''}><summary>Набор из других товаров</summary>
+        <div id="bundleBox"></div>
+        <button class="btn ghost small" data-bdadd type="button" style="margin-top:6px">＋ Добавить товар в набор</button>
+        <div class="note" style="text-align:left">При оплате набора списываются товары из состава; остаток набора считается по ним. Чтобы убрать набор — удалите все строки.</div>
+      </details>
       ${f('category', 'Категория', 'text', 'list="cats"')}
       <datalist id="cats">${[...new Set(admProducts.map(x => x.category).filter(Boolean))].map(c => `<option value="${esc(c)}">`).join('')}</datalist>
       <label>Описание</label><textarea name="description">${esc(p.description || '')}</textarea>
@@ -621,9 +672,23 @@ function openEditor(id) {
       ${id === 'new' ? '<div class="note">Фото можно добавить сразу после создания</div>' : ''}
     </form>`;
   document.body.classList.add('open'); tg?.BackButton?.show();
+  renderBundleBox();
+}
+let edBundle = [];
+function renderBundleBox() {
+  const box = $('bundleBox'); if (!box) return;
+  const opts = admProducts.filter(x => !x.is_bundle && !x.is_addon && x.id != editId);
+  box.innerHTML = edBundle.map((b, i) => `<div class="crow"><select data-bdp="${i}" style="flex:1">${opts.map(o => `<option value="${o.id}" ${o.id == b.product_id ? 'selected' : ''}>${esc(o.name)}</option>`).join('')}</select>
+      <input type="number" min="1" value="${b.qty}" data-bdq="${i}" style="width:70px" inputmode="numeric"><button class="mini" type="button" data-bddel="${i}" aria-label="Убрать">🗑</button></div>`).join('');
+  box.querySelectorAll('[data-bdp]').forEach(el => el.onchange = () => { edBundle[+el.dataset.bdp].product_id = +el.value; });
+  box.querySelectorAll('[data-bdq]').forEach(el => el.oninput = () => { edBundle[+el.dataset.bdq].qty = +el.value || 1; });
 }
 async function saveProduct() {
   const data = Object.fromEntries(new FormData($('pform')).entries());
+  data.unit = $('f_w')?.checked ? 'g' : '';
+  data.is_addon = Boolean($('f_addon')?.checked);
+  data.bundle = edBundle.filter(b => b.product_id);
+  if (data.bundle.length === 0 && editId !== 'new') data.bundle = [];
   try {
     if (editId === 'new') { const r = await api('/admin/products', data, 1); toast('Товар создан ✓'); await reloadAll(); openEditor(r.id); }
     else { await api('/admin/products/' + editId, data, 1); toast('Сохранено ✓'); closeSheet(); await reloadAll(); }
@@ -672,7 +737,7 @@ function orderCard(o) {
   return `
     <div class="order" id="ord-${o.id}">
       <div class="top"><span class="code">№ ${esc(o.code)}${o.buyer ? ' · ' + esc(o.buyer) : ''}</span><span class="pill ${esc(o.status)}">${esc(stLabel(o))}</span></div>
-      <ul>${o.items.map(i => `<li><span>${esc(i.name)} × ${i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
+      <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit === 'g' ? ', ' + gram(i.qty) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
         ${o.pickup ? '' : `<li><span>Доставка</span><span>${o.delivery_cost ? rub(o.delivery_cost) : 'бесплатно'}</span></li>`}</ul>
       <div class="sum"><span>Итого</span><span>${rub(o.total)}</span></div>
       <div class="meta">${esc(when(o.created_at))} · ${o.pickup ? '🏠 Самовывоз' : '📍 ' + esc(o.address)}</div>
@@ -877,7 +942,7 @@ async function reloadAll() {
   if (tab === 'admin' && admMode === 'products') renderAdmProducts();
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-d2save],[data-padd],[data-ptoggle],[data-pdel],.bar');
+  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-d2save],[data-report],[data-bdadd],[data-bddel],[data-padd],[data-ptoggle],[data-pdel],.bar');
   if (!t) return;
   const d = t.dataset;
   if (t.classList.contains('bar')) toast(d.tip);
@@ -909,6 +974,9 @@ document.addEventListener('click', async e => {
   else if (d.gotoprod) { admMode = 'products'; await loadAdmin(); openEditor(+d.gotoprod); }
   else if (d.cadd !== undefined) settingsCall('/admin/cities', { city: $('ncity').value, price: $('nprice').value }, 'Город добавлен ✓');
   else if (d.cdel) { if (await ask('Удалить город из списка доставки?')) settingsCall(`/admin/cities/${d.cdel}/delete`, {}, 'Удалено'); }
+  else if (d.report !== undefined) api('/admin/report', { days: 30, file: true }, 1).then(() => toast('Отчёт за 30 дней отправлен в чат 📊')).catch(err => toast(err.message));
+  else if (d.bdadd !== undefined) { const first = admProducts.find(x => !x.is_bundle && !x.is_addon && x.id != editId); if (first) { edBundle.push({ product_id: first.id, qty: 1 }); renderBundleBox(); } }
+  else if (d.bddel !== undefined) { edBundle.splice(+d.bddel, 1); renderBundleBox(); }
   else if (d.d2save !== undefined) settingsCall('/admin/delivery2', { postEnabled: $('d2Post').checked, distanceEnabled: $('d2Dist').checked, originAddress: $('d2Origin').value, tiers: $('d2Tiers').value,
     carriers: [...document.querySelectorAll('[data-car]')].map(r => ({ id: r.dataset.car, name: r.querySelector('.cn').value, price: r.querySelector('.cp').value })) }, 'Сохранено ✓');
   else if (d.dsave !== undefined) settingsCall('/admin/delivery', { otherPrice: $('dOther').value, freeFrom: $('dFree').value, pickup: $('dPickup').checked, pickupAddress: $('dPickupAddr').value }, 'Доставка сохранена ✓');

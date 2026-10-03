@@ -216,7 +216,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     const lang = db.getLang(req.chatId);
     const labels = t(lang, 'orderStatus') || {};
     const itemsStmt = db.prepare(
-      `SELECT oi.quantity, oi.price, p.id, p.name, p.name_en FROM order_items oi
+      `SELECT oi.quantity, oi.price, p.id, p.name, p.name_en, p.unit FROM order_items oi
        LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`);
     const list = db
       .prepare('SELECT * FROM orders WHERE chat_id = ? ORDER BY created_at DESC LIMIT 20')
@@ -239,7 +239,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
           address: o.address || '',
           created_at: o.created_at,
           items: itemsStmt.all(o.id).map((i) => ({
-            id: i.id, qty: i.quantity, price: i.price,
+            id: i.id, qty: i.quantity, price: i.price, unit: i.unit,
             name: (lang === 'en' && i.name_en) || i.name || '—',
           })),
         };
@@ -455,7 +455,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   });
 
   app.get('/shop-api/admin/orders', ...adm, (req, res) => {
-    const itemsStmt = db.prepare(`SELECT oi.quantity, oi.price, p.name FROM order_items oi
+    const itemsStmt = db.prepare(`SELECT oi.quantity, oi.price, p.name, p.unit FROM order_items oi
                                   LEFT JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`);
     const list = db.prepare('SELECT * FROM orders ORDER BY id DESC LIMIT 150').all().map((o) => ({
       id: o.id, code: o.order_code || String(o.id), status: String(o.status || '').split(':')[0],
@@ -464,7 +464,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       pickup: !o.delivery_city, track: o.track || '', rating: o.rating || 0, was_paid: Boolean(o.paid_at),
       promo: o.promo_code || '', discount: o.discount_percent || 0,
       buyer: db.getName(o.chat_id) || '', chat_id: o.chat_id,
-      items: itemsStmt.all(o.id).map((i) => ({ name: i.name || '—', qty: i.quantity, price: i.price })),
+      items: itemsStmt.all(o.id).map((i) => ({ name: i.name || '—', qty: i.quantity, price: i.price, unit: i.unit })),
     }));
     res.json({ orders: list });
   });
