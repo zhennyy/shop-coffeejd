@@ -308,6 +308,32 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
+  // Изменение остатков по названию товара: {changes:[{name, delta}]}, delta<0 — списать, >0 — вернуть.
+  // Всё или ничего: если хоть одной позиции не хватает, ничего не меняем.
+  app.post('/shop-api/admin/stock-delta', ...admP, (req, res) => {
+    const list = Array.isArray(req.body.changes) ? req.body.changes.slice(0, 100) : [];
+    const find = db.prepare('SELECT id, name, stock FROM products WHERE name = ?');
+    const upd = db.prepare('UPDATE products SET stock = ? WHERE id = ?');
+    try {
+      const out = db.transaction(() => {
+        const applied = [], unknown = [];
+        for (const c of list) {
+          const delta = parseInt(c.delta, 10), name = String(c.name || '');
+          if (!delta) continue;
+          const p = find.get(name);
+          if (!p) { unknown.push(name); continue; }
+          const next = p.stock + delta;
+          if (next < 0) throw new Error(`Недостаточно на складе: ${p.name} (есть ${p.stock}, нужно ${-delta})`);
+          upd.run(next, p.id);
+          applied.push({ name: p.name, from: p.stock, to: next });
+        }
+        return { applied, unknown };
+      })();
+      if (out.applied.length) checkLowStock(bot);
+      res.json({ ok: true, ...out });
+    } catch (e) { res.status(409).json({ error: e.message }); }
+  });
+
   app.post('/shop-api/admin/products/:id/delete', ...admP, (req, res) => {
     const id = parseInt(req.params.id, 10);
     db.prepare('DELETE FROM cart_items WHERE product_id = ?').run(id);
