@@ -144,12 +144,12 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
                        group_key, option_label, option_label_en, option2_label, option2_label_en, is_addon, addon_for, unit, step, min_qty
                 FROM products ORDER BY stock = 0, category, id`)
       .all();
-    const parts = db.prepare('SELECT b.bundle_id, p.name, p.name_en, b.qty, p.unit FROM bundle_items b JOIN products p ON p.id = b.product_id ORDER BY p.name').all();
+    const parts = db.prepare('SELECT b.bundle_id, p.name, p.name_en, b.qty, p.unit, p.price FROM bundle_items b JOIN products p ON p.id = b.product_id ORDER BY p.name').all();
     // ссылку на фото не отдаём как есть: картинки идут через наш сервер (/shop-photo),
     // иначе часть сайтов-источников не показывает их внутри Telegram
     const list = products.map(({ photo_url, ...p }) => ({
       ...p,
-      bundle: parts.filter((x) => x.bundle_id === p.id).map((x) => ({ name: x.name, name_en: x.name_en, qty: x.qty, unit: x.unit })),
+      bundle: parts.filter((x) => x.bundle_id === p.id).map((x) => ({ name: x.name, name_en: x.name_en, qty: x.qty, unit: x.unit, price: x.price })),
       photo: photo_url ? `/shop-photo/${p.id}?v=${crypto.createHash('md5').update(photo_url).digest('hex').slice(0, 8)}` : null,
     }));
     const owner = isOwnerId(req.chatId);

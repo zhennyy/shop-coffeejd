@@ -272,6 +272,21 @@
   .wbox .chip{background:var(--card)} .wbox .chip.on{background:var(--accent)}
   .toast{border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
   .pill{font-weight:700}
+  .vpills{display:flex;flex-wrap:wrap;gap:5px;margin-top:-2px}
+  .vpills i{font-style:normal;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+  .vpills i.alt{background:transparent;border:1px solid var(--line);color:var(--muted)}
+  .price small{font-size:11px;font-weight:600;color:var(--muted);margin-right:2px}
+  .pick{font-size:12.5px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:8px 12px;border-radius:12px;white-space:nowrap}
+  .info .row{flex-wrap:wrap}
+  .inside{font-size:12.5px;color:var(--muted);line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .price .was{font-size:12px;font-weight:600;color:var(--muted);text-decoration:line-through;margin-top:-2px}
+  .kind.gift{background:linear-gradient(135deg,#e8590c,#c2410c);right:8px;left:auto;top:8px;bottom:auto}
+  .bset{background:var(--accent-soft);border-radius:16px;padding:12px 14px;margin:8px 0 12px}
+  .btitle{font-weight:700;margin-bottom:6px}
+  .bline{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--accent) 14%,transparent);font-size:14px}
+  .bline .bn{flex:1;min-width:0}.bline .bq{color:var(--muted);white-space:nowrap}.bline .bp{font-weight:600;white-space:nowrap}
+  .bsave{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--accent);font-size:14px}
+  .bsave b{color:var(--ok)}
 </style>
 </head>
 <body>
@@ -364,6 +379,9 @@ const unitShort = u => (UNIT[u] || UNIT.g)[lang === 'en' ? 'en' : 'ru'];
 const qtyText = (p, q) => isW(p) ? gram(q, p.unit) : String(q);
 const priceText = p => isW(p) ? `${rub(p.price * 100)} / 100 ${unitShort(p.unit)}` : rub(p.price);
 const opt2Of = p => (lang === 'en' && p.option2_label_en) || p.option2_label || '';
+const bundleSum = p => (p.bundle || []).reduce((a, b) => a + (b.price || 0) * b.qty, 0);
+const bundleSave = p => Math.max(0, bundleSum(p) - p.price);
+const bName = b => (lang === 'en' && b.name_en) || b.name;
 const addonsFor = p => products.filter(a => a.is_addon && a.stock > 0 && a.id !== p.id && String(a.addon_for || '*').split('|').map(x => x.trim()).some(k => k === '*' || k === p.group_key || k === p.name));
 const byId = id => products.find(x => x.id == id);
 const when = s => { if (!s) return ''; const d = new Date(String(s).replace(' ', 'T') + 'Z'); return isNaN(d) ? '' : d.toLocaleString(lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
@@ -392,7 +410,7 @@ function haptic(kind) { try { tg?.HapticFeedback?.impactOccurred(kind || 'light'
 
 const NOIMG = `<div class="noimg">♨️</div>`;
 const EMO = [[/чай|tea|матча|пуэр/i, '🍵'], [/кофе|coffee|эспрессо/i, '☕'], [/набор|подар|set|gift/i, '🎁'], [/сироп|концентрат|лимонад/i, '🧃']];
-const emoOf = p => { const t = [p.category, p.group_key, p.name].join(' '); const m = EMO.find(([re]) => re.test(t)); return m ? m[1] : '♨️'; };
+const emoOf = p => { if (p.bundle && p.bundle.length) return '🎁'; const t = [p.category, p.group_key, p.name].join(' '); const m = EMO.find(([re]) => re.test(t)); return m ? m[1] : '♨️'; };
 const photo = p => p && p.photo ? `<img src="${esc(p.photo)}" alt="" loading="lazy" onerror="this.outerHTML=NOIMG">` : `<div class="noimg">${emoOf(p || {})}</div>`;
 
 function applyLang() {
@@ -417,14 +435,24 @@ function ctrl(p) {
   if (!q) return `<button class="add" data-add="${p.id}" aria-label="${L.addBtn}">+</button>`;
   return `<div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>`;
 }
+// карточка товара с вариантами: аккуратные «таблетки» вариантов и цена «от», вместо сухого «2 вар.»
+function variantsCard(p) {
+  const sib = siblings(p);
+  const first = sib.reduce((a, x) => (x.price * (isW(x) ? 100 : 1) < a.price * (isW(a) ? 100 : 1) ? x : a));
+  const o1 = [...new Set(sib.map(optOf).filter(Boolean))], o2 = [...new Set(sib.map(opt2Of).filter(Boolean))];
+  const pills = o1.slice(0, 3).map(v => `<i>${esc(v)}</i>`).join('') + (o1.length > 3 ? `<i>+${o1.length - 3}</i>` : '') + o2.slice(0, 2).map(v => `<i class="alt">${esc(v)}</i>`).join('');
+  return `<div class="vpills">${pills}</div>
+    <div class="row"><div class="price"><small>${L.from}</small> ${priceText(first)}</div><span class="pick">${lang === 'en' ? 'Choose' : 'Выбрать'}</span></div>`;
+}
 const cardHtml = p => `
   <article class="card ${p.stock <= 0 ? 'out' : ''}" data-open="${p.id}">
-    <div class="ph">${photo(p)}${stockTag(p)}${isW(p) ? `<span class="kind">${p.unit === 'ml' ? (lang === 'en' ? 'by volume' : 'на розлив') : (lang === 'en' ? 'by weight' : 'на развес')}</span>` : ''}</div>
+    <div class="ph">${photo(p)}${stockTag(p)}${p.bundle && p.bundle.length ? `<span class="kind gift">${bundleSave(p) ? (lang === 'en' ? 'Save ' : 'Выгода ') + rub(bundleSave(p)) : (lang === 'en' ? 'Set' : 'Набор')}</span>` : ''}${isW(p) ? `<span class="kind">${p.unit === 'ml' ? (lang === 'en' ? 'by volume' : 'на розлив') : (lang === 'en' ? 'by weight' : 'на развес')}</span>` : ''}</div>
     <div class="info">
       ${ct(p) ? `<div class="cat">${esc(ct(p))}</div>` : ''}
       <div class="name">${esc(baseOf(p))}</div>
-      ${p.group_key && siblings(p).length > 1 ? `<div class="row"><div class="price">${L.from} ${priceText(siblings(p).reduce((a, x) => (x.price * (isW(x) ? 100 : 1) < a.price * (isW(a) ? 100 : 1) ? x : a)))}</div><span class="vcount">${siblings(p).length} ${L.variants}</span></div>`
-      : `<div class="row"><div class="price">${priceText(p)}</div><div data-ctrl="${p.id}">${ctrl(p)}</div></div>`}
+      ${p.group_key && siblings(p).length > 1 ? variantsCard(p)
+      : `${p.bundle && p.bundle.length ? `<div class="inside">${lang === 'en' ? 'Inside' : 'Внутри'}: ${p.bundle.slice(0, 3).map(b => esc(bName(b).split(' · ')[0])).join(', ')}${p.bundle.length > 3 ? ' …' : ''}</div>` : ''}
+        <div class="row"><div class="price">${priceText(p)}${bundleSave(p) ? `<div class="was">${rub(bundleSum(p))}</div>` : ''}</div><div data-ctrl="${p.id}">${ctrl(p)}</div></div>`}
     </div>
   </article>`;
 function renderChips() {
@@ -582,7 +610,9 @@ function renderSheet() {
   const adds = addonsFor(p);
   const addHtml = adds.length ? `<div class="addons"><h3>${lang === 'en' ? 'Add to your order' : 'Добавить к заказу'}</h3>${adds.map(a => `
       <div class="arow"><div><div class="an">${esc(nm(a))}</div><div class="ap">+ ${priceText(a)}</div></div><div data-ctrl="${a.id}">${ctrl(a)}</div></div>`).join('')}</div>` : '';
-  const bundleHtml = p.bundle && p.bundle.length ? `<div class="bundle"><b>${lang === 'en' ? 'Set includes' : 'В наборе'}:</b> ${p.bundle.map(b => esc((lang === 'en' && b.name_en) || b.name) + (b.unit ? ' — ' + gram(b.qty, b.unit) : ' × ' + b.qty)).join('; ')}</div>` : '';
+  const bundleHtml = p.bundle && p.bundle.length ? `<div class="bset"><div class="btitle">${lang === 'en' ? 'What is inside' : 'Что в наборе'}</div>
+      ${p.bundle.map(b => `<div class="bline"><span class="bn">${esc(bName(b))}</span><span class="bq">${b.unit ? gram(b.qty, b.unit) : '× ' + b.qty}</span><span class="bp">${rub((b.price || 0) * b.qty)}</span></div>`).join('')}
+      ${bundleSave(p) ? `<div class="bsave"><span>${lang === 'en' ? 'Separately' : 'Отдельно'}: <s>${rub(bundleSum(p))}</s></span><b>${lang === 'en' ? 'You save' : 'Выгода'} ${rub(bundleSave(p))}</b></div>` : ''}</div>` : '';
   const presets = isW(p) ? [...new Set([minOf(p), 250, 500, 750, 1000, 2000].filter(v => v >= minOf(p) && v % stepOf(p) === 0 && v <= p.stock))].sort((a, b) => a - b).slice(0, 5) : [];
   const weightHint = isW(p) ? `<div class="wbox"><div class="wlbl">${lang === 'en' ? 'How much do you need?' : 'Сколько нужно?'}</div>
       <div class="opts">${presets.map(v => `<button class="chip ${q === v ? 'on' : ''}" data-setq="${p.id}:${v}">${gram(v, p.unit)}</button>`).join('')}</div>

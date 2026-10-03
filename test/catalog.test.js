@@ -161,9 +161,12 @@ test('на объём (мл) и пример «чай — 10 сортов» за
   assert.equal((await S.call(U, 'POST', '/shop-api/cart', { product_id: ml, qty: 125 })).status, 400);
   assert.equal((await S.call(U, 'POST', '/shop-api/cart', { product_id: ml, qty: 250 })).status, 200);
   const res = await stock.importXlsx(fs.readFileSync(path.join(__dirname, '..', 'примеры', 'чай-10-сортов.xlsx')));
-  assert.deepEqual(res.errors, []); assert.equal(res.created, 17);
+  assert.deepEqual(res.errors, []); assert.equal(res.created, 19);
   const teas = S.db.prepare("SELECT * FROM products WHERE category = 'Чай' AND name LIKE '%Холодный чай%'").get();
   assert.equal(teas.unit, 'ml');
-  const cards = S.db.prepare("SELECT COUNT(DISTINCT COALESCE(group_key, name)) n FROM products WHERE category = 'Чай' AND id IN (SELECT id FROM products ORDER BY id DESC LIMIT 17)").get().n;
-  assert.equal(cards, 10);   // 17 строк = 10 карточек чая
+  const cards = S.db.prepare("SELECT COUNT(DISTINCT COALESCE(group_key, name)) n FROM products WHERE category = 'Чай' AND id IN (SELECT id FROM products ORDER BY id DESC LIMIT 19)").get().n;
+  assert.equal(cards, 10);   // 17 строк = 10 карточек чая (+2 набора лежат в категории «Наборы»)
+  const set = S.db.prepare("SELECT id, stock FROM products WHERE name = 'Набор «Утёсный вечер»'").get();
+  assert.equal(inv.bundleOf(set.id).length, 3); assert.ok(set.stock > 0);
+  assert.equal(inv.bundleOf(set.id).find((b) => b.name === 'Те Гуань Инь').qty, 100);
 });
