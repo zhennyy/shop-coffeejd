@@ -59,7 +59,7 @@ function importCsv(text) {
                           VALUES (?,?,?,?,?,?,?)`);
   db.transaction(() => {
     rows.slice(1).forEach((r, n) => {
-      const line = n + 2, g = (i) => (i >= 0 ? String(r[i] ?? '').trim() : '');
+      const line = n + 2, g = (i) => (i >= 0 ? String(r[i] ?? '').trim().replace(/^'(?=[=+\-@])/, '') : '');
       const id = g(ix.id);
       const stock = g(ix.stock) === '' ? null : num(g(ix.stock));
       const price = g(ix.price) === '' ? null : Math.round(num(g(ix.price)) * 100);

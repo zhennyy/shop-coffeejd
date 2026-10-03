@@ -408,7 +408,7 @@ function mainButton() {
   const { n, sum } = cartTotals();
   // в корзине — «Оформить», на других вкладках при непустой корзине — «Корзина · сумма»
   if (n > 0 && tab !== 'orders' && tab !== 'admin') {
-    const text = tab === 'checkout' ? `Оплатить · ${rub(coTotal())}` : tab === 'cart' ? L.checkout(rub(sum)) : `🛒 ${L.tCart} · ${rub(sum)}`;
+    const text = tab === 'checkout' ? (typeof coCost === 'function' && coCost() == null ? 'Рассчитать и оформить' : `Оплатить · ${rub(coTotal())}`) : tab === 'cart' ? L.checkout(rub(sum)) : `🛒 ${L.tCart} · ${rub(sum)}`;
     tg.MainButton.setParams({ text, color: '#e8590c', text_color: '#ffffff' });
     tg.MainButton.show();
   } else tg.MainButton.hide();
@@ -441,8 +441,22 @@ async function checkout() {
 /* ---------- заказы ---------- */
 async function loadOrders() {
   $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1><div class="skel" style="aspect-ratio:3/1"></div>`;
+  let subsData = { subscriptions: [], intervals: [] };
   try { orders = (await api('/orders')).orders; } catch (e) { $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1><div class="empty">${esc(e.message)}</div>`; return; }
-  $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1>` + (orders.length ? orders.map(o => `
+  try { subsData = await api('/subscriptions'); } catch { /* подписки не обязательны для показа заказов */ }
+  const dayName = n => n === 7 ? 'раз в неделю' : n === 14 ? 'раз в 2 недели' : n === 21 ? 'раз в 3 недели' : n === 30 ? 'раз в месяц' : n === 60 ? 'раз в 2 месяца' : `раз в ${n} дн.`;
+  const subsHtml = subsData.subscriptions.length ? `<div class="box"><h3>Регулярные заказы</h3>${subsData.subscriptions.map(x => `
+      <div class="sub" style="padding:8px 0;border-top:1px solid var(--line,#eee)">
+        <div><b>${dayName(x.interval_days)}</b>${x.active ? ` · следующий ${esc(x.next_date.split('-').reverse().join('.'))}` : ' · на паузе'}</div>
+        <div class="note" style="text-align:left">${x.items.map(i => esc(i.name) + ' × ' + i.qty).join(', ')}</div>
+        <div class="seg" style="margin-top:6px;flex-wrap:wrap">
+          ${x.active ? `<button data-subact="skip" data-sub="${x.id}">Пропустить раз</button><button data-subact="pause" data-sub="${x.id}">Пауза</button>` : `<button data-subact="resume" data-sub="${x.id}">Возобновить</button>`}
+          <button data-subact="delete" data-sub="${x.id}">Отменить</button>
+        </div>
+      </div>`).join('')}
+      <div class="note" style="text-align:left">Деньги не списываются сами: в нужный день пришлём ссылку на оплату.</div></div>` : '';
+  window.__subIntervals = subsData.intervals;
+  $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1>` + subsHtml + (orders.length ? orders.map(o => `
     <div class="order">
       <div class="top"><span class="code">№ ${esc(o.code)}</span><span class="pill ${esc(o.status)}">${esc(o.statusLabel)}</span></div>
       ${o.step >= 0 ? `<div class="steps">${(lang === 'en' ? ['Paid', 'Packing', o.pickup ? 'Ready' : 'Shipped', o.pickup ? 'Picked up' : 'Delivered'] : ['Оплачен', 'Собираем', o.pickup ? 'Готов' : 'Отправлен', o.pickup ? 'Получен' : 'Доставлен'])
@@ -454,6 +468,7 @@ async function loadOrders() {
       ${o.track ? `<div class="track">🚚 ${lang === 'en' ? 'Tracking' : 'Трек-номер'}: <b>${esc(o.track)}</b></div>` : ''}
       ${o.rating ? `<div class="stars">${'★'.repeat(o.rating)}${'☆'.repeat(5 - o.rating)}</div>` : ''}
       ${o.can_pay ? `<button class="btn pay" data-payorder="${o.id}">💳 Оплатить ${rub(o.total)}</button>` : ''}
+      ${o.status !== 'awaiting_payment' && o.status !== 'cancelled' ? `<div class="seg" style="margin-top:8px;flex-wrap:wrap"><button data-repeat="${o.id}">Повторить заказ</button>${o.can_subscribe ? `<button data-subnew="${o.id}">Повторять регулярно</button>` : ''}</div>` : ''}
     </div>`).join('') : `<div class="empty"><b>📦</b>${L.ordersEmpty}</div>`);
 }
 
@@ -814,6 +829,19 @@ function renderSettings() {
       <input id="dPickupAddr" placeholder="Адрес и часы самовывоза — покупатель увидит после оплаты" value="${esc(d.pickupAddress || '')}">
       <div class="actions"><button class="btn" data-dsave>Сохранить доставку</button></div>
     </div>
+    <div class="box form"><h3>📦 СДЭК / Почта и доставка по расстоянию</h3>
+      <label class="line2"><span>СДЭК / Почта России</span><span class="sw"><input type="checkbox" id="d2Post" ${s.delivery2.post.enabled ? 'checked' : ''}><i></i></span></label>
+      <div class="note" style="text-align:left">Цена — фиксированная, вы задаёте её сами (точный тариф перевозчика бот не считает).</div>
+      ${s.delivery2.post.carriers.map((c, i) => `<div class="crow" data-car="${esc(c.id)}"><input class="cn" value="${esc(c.name)}"><input class="cp" type="number" inputmode="numeric" value="${k2r(c.price)}"><span class="rub">₽</span></div>`).join('')}
+      <label class="line2"><span>По расстоянию</span><span class="sw"><input type="checkbox" id="d2Dist" ${s.delivery2.distance.enabled ? 'checked' : ''}><i></i></span></label>
+      <input id="d2Origin" placeholder="Откуда отправляете: город, улица, дом" value="${esc(s.delivery2.distance.originAddress || '')}">
+      <textarea id="d2Tiers" placeholder="5 : 200">${esc(s.delivery2.distance.tiers)}</textarea>
+      <div class="note" style="text-align:left">Каждая строка: «до скольки км : цена в ₽». Расстояние считается по прямой. Дальше последней ступени бот не возит.</div>
+      <div class="actions"><button class="btn" data-d2save>Сохранить</button></div>
+    </div>
+    <div class="box"><h3>🧾 Чеки (54-ФЗ)</h3>
+      <div class="note" style="text-align:left">${s.receipts ? 'Включены: чек формируется вместе с платежом ЮKassa, покупатель указывает телефон или e-mail.' : 'Выключены. Включаются настройкой YOOKASSA_RECEIPTS=on на сервере после согласования с ЮKassa и вашей онлайн-кассой.'}</div>
+    </div>
     <div class="box form"><h3>🎟 Промокоды</h3>
       ${s.promos.length ? s.promos.map(p => `
         <div class="prow ${p.active ? '' : 'off'}">
@@ -849,7 +877,7 @@ async function reloadAll() {
   if (tab === 'admin' && admMode === 'products') renderAdmProducts();
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-padd],[data-ptoggle],[data-pdel],.bar');
+  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-d2save],[data-padd],[data-ptoggle],[data-pdel],.bar');
   if (!t) return;
   const d = t.dataset;
   if (t.classList.contains('bar')) toast(d.tip);
@@ -881,6 +909,8 @@ document.addEventListener('click', async e => {
   else if (d.gotoprod) { admMode = 'products'; await loadAdmin(); openEditor(+d.gotoprod); }
   else if (d.cadd !== undefined) settingsCall('/admin/cities', { city: $('ncity').value, price: $('nprice').value }, 'Город добавлен ✓');
   else if (d.cdel) { if (await ask('Удалить город из списка доставки?')) settingsCall(`/admin/cities/${d.cdel}/delete`, {}, 'Удалено'); }
+  else if (d.d2save !== undefined) settingsCall('/admin/delivery2', { postEnabled: $('d2Post').checked, distanceEnabled: $('d2Dist').checked, originAddress: $('d2Origin').value, tiers: $('d2Tiers').value,
+    carriers: [...document.querySelectorAll('[data-car]')].map(r => ({ id: r.dataset.car, name: r.querySelector('.cn').value, price: r.querySelector('.cp').value })) }, 'Сохранено ✓');
   else if (d.dsave !== undefined) settingsCall('/admin/delivery', { otherPrice: $('dOther').value, freeFrom: $('dFree').value, pickup: $('dPickup').checked, pickupAddress: $('dPickupAddr').value }, 'Доставка сохранена ✓');
   else if (d.padd !== undefined) settingsCall('/admin/promos', { code: $('pcode').value, percent: $('ppct').value, max_uses: $('pmax').value }, 'Промокод создан ✓');
   else if (d.ptoggle) settingsCall(`/admin/promos/${d.ptoggle}`, { active: t.checked }, t.checked ? 'Промокод включён' : 'Промокод выключен');
@@ -889,13 +919,18 @@ document.addEventListener('click', async e => {
 
 
 /* ---------- оформление и оплата ---------- */
-let co = { delivery: 'city', city: '', other: '', address: '', phone: '', promo: '', promoPct: 0, promoOk: '' }, coInfo = null;
+let co = { delivery: 'city', city: '', other: '', address: '', phone: '', email: '', carrier: '', quote: null, promo: '', promoPct: 0, promoOk: '' }, coInfo = null;
 const coGoods = () => { const { sum } = cartTotals(); return sum - (co.promoPct ? Math.round(sum * co.promoPct / 100) : 0); };
-const coFree = () => Boolean(coInfo && coInfo.freeFrom > 0 && coGoods() >= coInfo.freeFrom);
+const coFree = () => Boolean(coInfo && coInfo.freeFrom > 0 && co.delivery !== 'pickup' && coGoods() >= coInfo.freeFrom);
+const coKey = () => [co.city, co.other, co.address].join('|').trim().toLowerCase();
+const coCityName = () => co.delivery === 'city' && co.city !== '__other' ? co.city : (co.delivery === 'city' ? co.other.trim() : co.city.trim());
+// null — цена пока неизвестна (нужен расчёт по адресу)
 const coCost = () => {
-  if (co.delivery === 'pickup' || !coInfo || coFree()) return 0;
+  if (co.delivery === 'pickup' || !coInfo) return 0;
+  if (coFree()) return 0;
+  if (co.delivery === 'post') { const c = (coInfo.post?.carriers || []).find(x => x.id === co.carrier); return c ? c.price : 0; }
+  if (co.delivery === 'distance') return co.quote && co.quote.key === coKey() ? co.quote.delivery : null;
   const n = s => String(s || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
-  // «Другой город», но вписали город из списка (например «москва») — берём его тариф, как и сервер
   const want = co.city === '__other' ? n(co.other) : n(co.city);
   const c = coInfo.cities.find(x => n(x.city) === want || (x.city_en && n(x.city_en) === want));
   return c ? c.price : (co.city === '__other' ? coInfo.otherPrice : 0);
@@ -908,7 +943,11 @@ async function openCheckout() {
     try { coInfo = await api('/checkout-info'); } catch (e) { $('v-checkout').innerHTML = `<h1>Оформление</h1><div class="empty">${esc(e.message)}</div>`; return; }
     if (!co.city && coInfo.cities.length) co.city = (coInfo.cities.find(c => /петербург/i.test(c.city)) || coInfo.cities[0]).city;
     if (!co.city) co.city = '__other';
-    if (!coInfo.pickup) co.delivery = 'city';
+    if (!coInfo.pickup && co.delivery === 'pickup') co.delivery = 'city';
+    if (coInfo.post && !co.carrier) co.carrier = coInfo.post.carriers[0]?.id || '';
+    const saved = String(coInfo.contact || '').split(/\s+/);
+    if (!co.phone) co.phone = saved.find(x => !x.includes('@') && x.replace(/\D/g, '').length >= 10) || '';
+    if (!co.email) co.email = saved.find(x => x.includes('@')) || '';
   }
   renderCheckout();
 }
@@ -916,18 +955,33 @@ function renderCheckout() {
   const { sum } = cartTotals();
   const disc = co.promoPct ? Math.round(sum * co.promoPct / 100) : 0;
   const dcost = coCost();
-  const total = sum - disc + dcost;
+  const total = sum - disc + (dcost || 0);
   const cityName = c => (lang === 'en' && c.city_en) || c.city;
-  $('v-checkout').innerHTML = `<h1>Оформление</h1>
-    <div class="box"><h3>Получение</h3>
-      ${coInfo.pickup ? `<div class="seg"><button data-dl="city" class="${co.delivery === 'city' ? 'on' : ''}">🚚 Доставка</button><button data-dl="pickup" class="${co.delivery === 'pickup' ? 'on' : ''}">🏠 Самовывоз</button></div>` : ''}
-      ${co.delivery === 'city' && coInfo.freeFrom > 0 ? `<div class="note" style="text-align:left;margin:0 0 6px">${coFree() ? '🎉 Доставка бесплатно!' : `Бесплатная доставка от ${rub(coInfo.freeFrom)} — осталось ${rub(coInfo.freeFrom - coGoods())}`}</div>` : ''}
-      ${co.delivery === 'city' ? `
+  const methods = [['city', '🚚 Курьер'], ...(coInfo.pickup ? [['pickup', '🏠 Самовывоз']] : []), ...(coInfo.post ? [['post', '📦 СДЭК / Почта']] : []), ...(coInfo.distance ? [['distance', '📍 По расстоянию']] : [])];
+  const addrBox = `<div class="fld"><textarea id="coAddr" placeholder="Улица, дом, квартира, подъезд">${esc(co.address)}</textarea></div>`;
+  let body;
+  if (co.delivery === 'pickup') body = `<div class="note" style="text-align:left;margin-top:10px">${coInfo.pickupAddress ? '📍 ' + esc(coInfo.pickupAddress) + '<br>' : ''}Напишем в чат, когда заказ будет готов к выдаче.</div>`;
+  else if (co.delivery === 'city') body = `
         <div class="fld"><select id="coCity">${coInfo.cities.map(c => `<option value="${esc(c.city)}" ${co.city === c.city ? 'selected' : ''}>${esc(cityName(c))} — ${rub(c.price)}</option>`).join('')}
           <option value="__other" ${co.city === '__other' ? 'selected' : ''}>Другой город — ${rub(coInfo.otherPrice)}</option></select></div>
-        ${co.city === '__other' ? `<div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>` : ''}
-        <div class="fld"><textarea id="coAddr" placeholder="Улица, дом, квартира, подъезд">${esc(co.address)}</textarea></div>` : `<div class="note" style="text-align:left;margin-top:10px">${coInfo.pickupAddress ? '📍 ' + esc(coInfo.pickupAddress) + '<br>' : ''}Напишем в чат, когда заказ будет готов к выдаче.</div>`}
-      <div class="fld"><input id="coPhone" type="tel" inputmode="tel" placeholder="Телефон для связи" value="${esc(co.phone)}"></div>
+        ${co.city === '__other' ? `<div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>` : ''}${addrBox}`;
+  else if (co.delivery === 'post') body = `
+        <div class="fld"><select id="coCarrier">${(coInfo.post.carriers).map(c => `<option value="${esc(c.id)}" ${co.carrier === c.id ? 'selected' : ''}>${esc(c.name)} — ${rub(c.price)}</option>`).join('')}</select></div>
+        <div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>
+        <div class="fld"><textarea id="coAddr" placeholder="Адрес получения: улица, дом, квартира или пункт выдачи, индекс">${esc(co.address)}</textarea></div>
+        <div class="note" style="text-align:left">Отправим выбранным перевозчиком, пришлём трек-номер в чат.</div>`;
+  else body = `
+        <div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>${addrBox}
+        <button class="btn ghost" data-quote style="margin-top:6px">Рассчитать стоимость</button>
+        <div class="note" style="text-align:left">${co.quote && co.quote.key === coKey() ? `Расстояние ≈ ${co.quote.km} км — доставка ${rub(co.quote.delivery)}` : `Возим до ${coInfo.distance.maxKm} км. Стоимость зависит от расстояния до вашего адреса.`}</div>`;
+  $('v-checkout').innerHTML = `<h1>Оформление</h1>
+    <div class="box"><h3>Получение</h3>
+      ${methods.length > 1 ? `<div class="seg" style="flex-wrap:wrap">${methods.map(([k, n]) => `<button data-dl="${k}" class="${co.delivery === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
+      ${co.delivery !== 'pickup' && coInfo.freeFrom > 0 ? `<div class="note" style="text-align:left;margin:0 0 6px">${coFree() ? 'Доставка бесплатно' : `Бесплатная доставка от ${rub(coInfo.freeFrom)} — осталось ${rub(coInfo.freeFrom - coGoods())}`}</div>` : ''}
+      ${body}
+      <div class="fld"><input id="coPhone" type="tel" inputmode="tel" placeholder="Телефон" value="${esc(co.phone)}"></div>
+      ${coInfo.receipts ? `<div class="fld"><input id="coEmail" type="email" inputmode="email" placeholder="E-mail для чека (необязательно, если указан телефон)" value="${esc(co.email)}"></div>
+        <div class="note" style="text-align:left">После оплаты чек придёт на телефон или e-mail.</div>` : ''}
     </div>
     <div class="box"><h3>Промокод</h3>
       <div class="promo"><input id="coPromo" placeholder="Если есть" value="${esc(co.promo)}" autocapitalize="characters"><button class="btn ghost" data-promo>Применить</button></div>
@@ -936,16 +990,26 @@ function renderCheckout() {
     <div class="box">
       <div class="sumrow"><span>Товары</span><span>${rub(sum)}</span></div>
       ${disc ? `<div class="sumrow"><span>Скидка ${co.promoPct}%</span><span>−${rub(disc)}</span></div>` : ''}
-      <div class="sumrow"><span>Доставка</span><span>${co.delivery === 'pickup' || coFree() ? 'бесплатно' : rub(dcost)}</span></div>
-      <div class="sumrow big"><span>Итого</span><span>${rub(total)}</span></div>
+      <div class="sumrow"><span>Доставка</span><span>${co.delivery === 'pickup' || coFree() ? 'бесплатно' : dcost == null ? 'считаем по адресу' : rub(dcost)}</span></div>
+      <div class="sumrow big"><span>Итого</span><span>${dcost == null ? '—' : rub(total)}</span></div>
     </div>
-    ${inTg ? '' : `<button class="btn" data-pay>Оплатить · ${rub(total)}</button>`}
+    ${inTg ? '' : `<button class="btn" data-pay>${dcost == null ? 'Рассчитать и оформить' : 'Оплатить · ' + rub(total)}</button>`}
     <div class="note">${L.checkoutNote}</div>`;
   const bind = (id, k, rerender) => { const el = $(id); if (el) el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = e => { co[k] = e.target.value; if (rerender) renderCheckout(); else mainButton(); }; };
-  bind('coCity', 'city', true); bind('coOther', 'other'); if ($('coOther')) $('coOther').onchange = () => renderCheckout(); bind('coAddr', 'address'); bind('coPhone', 'phone'); bind('coPromo', 'promo');
+  bind('coCity', 'city', true); bind('coCarrier', 'carrier', true); bind('coOther', 'other'); if ($('coOther') && co.delivery === 'city') $('coOther').onchange = () => renderCheckout();
+  bind('coAddr', 'address'); bind('coPhone', 'phone'); bind('coEmail', 'email'); bind('coPromo', 'promo');
+  if ($('coAddr') && co.delivery === 'distance') $('coAddr').onchange = () => renderCheckout();
   mainButton();
 }
-function coTotal() { return coGoods() + coCost(); }
+function coTotal() { return coGoods() + (coCost() || 0); }
+async function quoteDistance() {
+  if (co.other.trim().length < 2 || co.address.trim().length < 5) { toast('Укажите город и адрес'); return false; }
+  try {
+    const d = await api('/delivery-quote', { delivery: 'distance', city: co.other.trim(), address: co.address, promo: co.promoPct ? co.promo : '' }, 1);
+    co.quote = { key: coKey(), delivery: d.delivery, km: d.km };
+    renderCheckout(); return true;
+  } catch (e) { toast(e.message); return false; }
+}
 async function applyPromo() {
   co.promo = ($('coPromo')?.value || '').trim();
   if (!co.promo) { co.promoPct = 0; co.promoOk = ''; renderCheckout(); return; }
@@ -956,21 +1020,24 @@ async function applyPromo() {
 let paying = false;
 async function pay() {
   if (paying) return;
-  if (co.delivery === 'city') {
-    if (co.city === '__other' && co.other.trim().length < 2) { toast('Укажите город'); $('coOther')?.focus(); return; }
-    if (co.address.trim().length < 5) { toast('Укажите адрес доставки'); $('coAddr')?.focus(); return; }
-  }
+  const m = co.delivery;
+  if (m === 'city' && co.city === '__other' && co.other.trim().length < 2) { toast('Укажите город'); $('coOther')?.focus(); return; }
+  if ((m === 'post' || m === 'distance') && co.other.trim().length < 2) { toast('Укажите город'); $('coOther')?.focus(); return; }
+  if (m !== 'pickup' && co.address.trim().length < 5) { toast('Укажите адрес доставки'); $('coAddr')?.focus(); return; }
+  if (co.phone.replace(/\D/g, '').length < 10 && !(co.email && coInfo.receipts)) { toast('Укажите телефон'); $('coPhone')?.focus(); return; }
+  if (co.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(co.email.trim())) { toast('Проверьте e-mail'); $('coEmail')?.focus(); return; }
+  if (m === 'distance' && coCost() == null) { await quoteDistance(); return; } // сначала покажем цену, потом оплата
   if (co.promo && !co.promoPct) { await applyPromo(); if (!co.promoPct) return; }
   paying = true; tg?.MainButton?.showProgress?.();
   try {
-    const d = await api('/order', { delivery: co.delivery === 'pickup' ? 'pickup' : 'city', city: co.city === '__other' ? co.other.trim() : co.city,
-      address: co.address, phone: co.phone, promo: co.promoPct ? co.promo : '' }, 1);
+    const city = m === 'city' ? (co.city === '__other' ? co.other.trim() : co.city) : m === 'pickup' ? '' : co.other.trim();
+    const d = await api('/order', { delivery: m, city, carrier: m === 'post' ? co.carrier : '', address: co.address, phone: co.phone, email: co.email.trim(), promo: co.promoPct ? co.promo : '' }, 1);
     haptic('heavy');
     cart = {}; renderCart(); renderGrid();
-    co.promo = ''; co.promoPct = 0; co.promoOk = '';
+    co.promo = ''; co.promoPct = 0; co.promoOk = ''; co.quote = null;
     if (tg?.openLink) tg.openLink(d.pay_url); else window.open(d.pay_url, '_blank');
     go('orders');
-    toast(`Заказ ${d.code} создан — осталось оплатить 💳`);
+    toast(`Заказ ${d.code} создан — осталось оплатить`);
   } catch (e) { toast(e.message); }
   finally { paying = false; tg?.MainButton?.hideProgress?.(); }
 }
@@ -979,14 +1046,50 @@ async function payOrder(id) {
   catch (e) { toast(e.message); }
 }
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-dl],[data-promo],[data-pay],[data-payorder]');
+  const t = e.target.closest('[data-dl],[data-promo],[data-pay],[data-payorder],[data-quote]');
   if (!t) return;
   const d = t.dataset;
   if (d.dl) { co.delivery = d.dl; renderCheckout(); }
   else if (d.promo !== undefined) applyPromo();
+  else if (d.quote !== undefined) quoteDistance();
   else if (d.pay !== undefined) pay();
   else if (d.payorder) payOrder(+d.payorder);
 });
+
+document.addEventListener('click', async e => {
+  const t = e.target.closest('[data-repeat],[data-subnew],[data-subact]');
+  if (!t) return;
+  const d = t.dataset;
+  try {
+    if (d.repeat) {
+      const r = await api(`/orders/${d.repeat}/repeat`, {}, 1);
+      cart = r.cart || {}; renderCart(); renderGrid(); go('cart');
+      toast(r.missing ? 'Часть товаров закончилась — добавили то, что есть' : 'Товары в корзине');
+    } else if (d.subnew) {
+      const opts = window.__subIntervals || [14, 30];
+      const days = await pickInterval(opts);
+      if (!days) return;
+      await api('/subscriptions', { order_id: +d.subnew, days }, 1);
+      toast('Регулярный заказ настроен'); loadOrders();
+    } else if (d.subact) {
+      if (d.subact === 'delete' && !(await ask('Отменить регулярный заказ?'))) return;
+      await api(`/subscriptions/${d.sub}`, { action: d.subact }, 1);
+      loadOrders();
+    }
+  } catch (err) { toast(err.message); }
+});
+function pickInterval(opts) {
+  const name = n => n === 7 ? 'Раз в неделю' : n === 14 ? 'Раз в 2 недели' : n === 21 ? 'Раз в 3 недели' : n === 30 ? 'Раз в месяц' : n === 60 ? 'Раз в 2 месяца' : `Раз в ${n} дн.`;
+  return new Promise(res => {
+    const w = document.createElement('div');
+    w.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:99;display:flex;align-items:flex-end';
+    w.innerHTML = `<div style="background:var(--bg,#fff);width:100%;padding:16px;border-radius:16px 16px 0 0"><h3 style="margin:0 0 10px">Как часто повторять?</h3>
+      ${opts.map(n => `<button class="btn ghost" data-n="${n}" style="width:100%;margin-bottom:8px">${name(n)}</button>`).join('')}
+      <button class="btn ghost" data-n="0" style="width:100%">Закрыть</button></div>`;
+    w.onclick = ev => { const b = ev.target.closest('[data-n]'); if (b || ev.target === w) { w.remove(); res(b ? +b.dataset.n : 0); } };
+    document.body.appendChild(w);
+  });
+}
 
 let startTabDone = false;
 async function load() {

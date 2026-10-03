@@ -27,10 +27,22 @@ const isLocalPhoto = (url) => {
   return Boolean(m) && fs.existsSync(path.join(m[1] === 'photos' ? photosDir : uploadsDir, m[2]));
 };
 
+// Защита от SSRF: не ходим по ссылкам во внутреннюю сеть (localhost, 10.x, 192.168.x, 169.254.x — метаданные облака и т.п.)
+const isPrivateIp = (ip) => {
+  if (ip.includes(':')) return /^(::1?|fe80|fc|fd|::ffff:(127|10|192\.168|169\.254|172\.(1[6-9]|2\d|3[01]))\.)/i.test(ip);
+  const [a, b] = ip.split('.').map(Number);
+  return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+};
+async function assertPublicUrl(url) {
+  const host = new URL(url).hostname.replace(/^\[|\]$/g, '');
+  const addrs = require('net').isIP(host) ? [{ address: host }] : await require('dns').promises.lookup(host, { all: true });
+  if (!addrs.length || addrs.some((x) => isPrivateIp(x.address))) throw new Error('ссылка ведёт во внутреннюю сеть');
+}
 async function localizePhoto(id, url) {
   if (!url || isLocalPhoto(url) || !/^https?:\/\//i.test(url) || !PUBLIC_BASE) return false;
+  await assertPublicUrl(url);
   const r = await require('axios').get(url, {
-    responseType: 'arraybuffer', timeout: 20000, maxContentLength: 15 * 1024 * 1024,
+    responseType: 'arraybuffer', timeout: 20000, maxContentLength: 15 * 1024 * 1024, maxRedirects: 0,
     headers: { 'User-Agent': 'Mozilla/5.0 (Zerno shop)', Accept: 'image/*' },
   });
   const type = String(r.headers['content-type'] || '');
@@ -104,10 +116,20 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     if (Date.now() / 1000 - Number(params.get('auth_date') || 0) > 86400) return null; // подпись старше суток
     try { return JSON.parse(params.get('user')); } catch { return null; }
   }
+  // простой ограничитель частоты: не больше max запросов за окно на ключ
+  const hits = new Map();
+  const rateOk = (key, max, windowMs) => {
+    const now = Date.now();
+    const arr = (hits.get(key) || []).filter((x) => now - x < windowMs);
+    arr.push(now); hits.set(key, arr);
+    if (hits.size > 5000) for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > windowMs) hits.delete(k);
+    return arr.length <= max;
+  };
   const shopAuth = (req, res, next) => {
     const user = tgUser(req);
     if (!user || !user.id) return res.status(401).json({ error: 'Откройте магазин из Telegram' });
     req.chatId = user.id; // личный чат с ботом = id пользователя
+    if (!rateOk('all:' + user.id, 240, 60000)) return res.status(429).json({ error: 'Слишком часто, подождите минуту' });
     next();
   };
   const cartMap = (chatId) =>
@@ -454,6 +476,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
 
   const findPromo = pricing.findPromo;
   app.post('/shop-api/promo', shopAuth, (req, res) => {
+    if (!rateOk('promo:' + req.chatId, 12, 60000)) return res.status(429).json({ error: 'Слишком много попыток, подождите минуту' }); // защита от подбора кодов
     try { res.json({ ok: true, ...findPromo(req.body.code) }); } catch (e) { res.status(400).json({ error: e.message }); }
   });
 
@@ -478,7 +501,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       const contact = [phone, email].filter(Boolean).join(' ') || null;
       if (receipt.enabled() && !receipt.contactFrom(contact)) return res.status(400).json({ error: 'Для чека укажите телефон или e-mail' });
       let promo;
-      try { promo = findPromo(b.promo); } catch (e) { return res.status(400).json({ error: e.message }); }
+      try { promo = findPromo(b.promo); } catch (e) { rateOk('promo:' + chatId, 12, 60000); return res.status(400).json({ error: e.message }); }
       const rs = await core.resolve({ method: b.delivery, city: b.city, carrier: b.carrier, addr: b.address }, total, promo.percent, lang);
       const address = phone ? `${rs.address} · тел. ${phone}` : rs.address;
 
@@ -609,4 +632,4 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   );
 }
 
-module.exports = { startWebhookServer };
+module.exports = { startWebhookServer , assertPublicUrl };
