@@ -116,7 +116,8 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
 
   app.get('/shop-api/catalog', shopAuth, (req, res) => {
     const products = db
-      .prepare(`SELECT id, name, name_en, description, description_en, category, category_en, price, stock, photo_url
+      .prepare(`SELECT id, name, name_en, description, description_en, category, category_en, price, stock, photo_url,
+                       group_key, option_label, option_label_en
                 FROM products ORDER BY stock = 0, category, id`)
       .all();
     // ссылку на фото не отдаём как есть: картинки идут через наш сервер (/shop-photo),
@@ -253,6 +254,16 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       description_en: String(b.description_en || '').trim().slice(0, 1000) || null,
       category_en: String(b.category_en || '').trim().slice(0, 60) || null,
     };
+    // вариант: в базе название хранится целиком «База · вариант», чтобы корзина и заказы показывали его как есть
+    const opt = String(b.option_label || '').trim().slice(0, 40);
+    const optEn = String(b.option_label_en || '').trim().slice(0, 40);
+    if (opt) {
+      p.group_key = p.name;
+      p.option_label = opt;
+      p.option_label_en = optEn || null;
+      p.name = `${p.name} · ${opt}`.slice(0, 160);
+      p.name_en = p.name_en ? `${p.name_en} · ${optEn || opt}`.slice(0, 160) : null;
+    } else { p.group_key = null; p.option_label = null; p.option_label_en = null; }
     if (!p.name) throw new Error('Укажите название');
     if (!(p.price > 0)) throw new Error('Укажите цену');
     return p;
@@ -267,8 +278,8 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   app.post('/shop-api/admin/products', ...adm, (req, res) => {
     try {
       const p = cleanProduct(req.body);
-      const r = db.prepare(`INSERT INTO products (name, description, price, stock, category, name_en, description_en, category_en)
-                            VALUES (@name, @description, @price, @stock, @category, @name_en, @description_en, @category_en)`).run(p);
+      const r = db.prepare(`INSERT INTO products (name, description, price, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en)
+                            VALUES (@name, @description, @price, @stock, @category, @name_en, @description_en, @category_en, @group_key, @option_label, @option_label_en)`).run(p);
       res.json({ ok: true, id: r.lastInsertRowid });
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
@@ -277,7 +288,8 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     try {
       const p = cleanProduct(req.body);
       const r = db.prepare(`UPDATE products SET name=@name, description=@description, price=@price, stock=@stock, category=@category,
-                            name_en=@name_en, description_en=@description_en, category_en=@category_en WHERE id=@id`)
+                            name_en=@name_en, description_en=@description_en, category_en=@category_en,
+                            group_key=@group_key, option_label=@option_label, option_label_en=@option_label_en WHERE id=@id`)
         .run({ ...p, id: parseInt(req.params.id, 10) });
       if (!r.changes) return res.status(404).json({ error: 'Товар не найден' });
       if (p.stock > 0) checkLowStock(bot);

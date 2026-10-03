@@ -171,6 +171,11 @@ if (!productColumns.includes('description_en')) {
 if (!productColumns.includes('category_en')) {
   db.exec('ALTER TABLE products ADD COLUMN category_en TEXT');
 }
+// варианты товара: каждый вариант — отдельная строка-SKU со своей ценой и остатком,
+// строки одной группы (group_key) витрина показывает одной карточкой с выбором варианта
+if (!productColumns.includes('group_key')) db.exec('ALTER TABLE products ADD COLUMN group_key TEXT');
+if (!productColumns.includes('option_label')) db.exec('ALTER TABLE products ADD COLUMN option_label TEXT');
+if (!productColumns.includes('option_label_en')) db.exec('ALTER TABLE products ADD COLUMN option_label_en TEXT');
 
 // одноразовый бэкфилл английских переводов для стартовых демо-товаров
 // (если они уже есть в базе без name_en — например, база создана до появления двуязычности)
@@ -223,16 +228,20 @@ if (deliveryCount === 0) {
 const count = db.prepare('SELECT COUNT(*) AS c FROM products').get().c;
 if (count === 0) {
   const insert = db.prepare(
-    'INSERT INTO products (name, description, price, photo_url, stock, category, name_en, description_en, category_en) VALUES (?,?,?,?,?,?,?,?,?)'
+    'INSERT INTO products (name, description, price, photo_url, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
   );
-  const seed = [
-    ['Эфиопия Иргачефф', 'Светлая обжарка: жасмин, бергамот, чёрный чай. 250 г', 120000, 40, 'Кофе', 'Ethiopia Yirgacheffe', 'Light roast: jasmine, bergamot, black tea. 250 g', 'Coffee'],
-    ['Колумбия Супремо', 'Средняя обжарка: шоколад, орех, карамель. 250 г', 95000, 60, 'Кофе', 'Colombia Supremo', 'Medium roast: chocolate, nuts, caramel. 250 g', 'Coffee'],
-    ['Бразилия Сантос', 'Тёмная обжарка для эспрессо: какао, пряности. 250 г', 80000, 80, 'Кофе', 'Brazil Santos', 'Dark espresso roast: cocoa, spices. 250 g', 'Coffee'],
-    ['Набор «Дегустация»', 'Три сорта по 100 г: светлая, средняя и тёмная обжарка', 190000, 25, 'Наборы', 'Tasting set', 'Three roasts, 100 g each: light, medium, dark', 'Sets'],
-    ['Улун Те Гуан Инь', 'Классический улун с цветочным ароматом. 100 г', 70000, 30, 'Чай', 'Tie Guan Yin oolong', 'Classic floral oolong. 100 g', 'Tea'],
+  // [название, описание, цена 250 г (коп.), цена 1 кг, остаток, категория, name_en, description_en, category_en]
+  const coffees = [
+    ['Эфиопия Иргачефф', 'Светлая обжарка: жасмин, бергамот, чёрный чай', 120000, 420000, 'Кофе', 'Ethiopia Yirgacheffe', 'Light roast: jasmine, bergamot, black tea'],
+    ['Колумбия Супремо', 'Средняя обжарка: шоколад, орех, карамель', 95000, 340000, 'Кофе', 'Colombia Supremo', 'Medium roast: chocolate, nuts, caramel'],
+    ['Бразилия Сантос', 'Тёмная обжарка для эспрессо: какао, пряности', 80000, 290000, 'Кофе', 'Brazil Santos', 'Dark espresso roast: cocoa, spices'],
   ];
-  for (const [n, d, p, st, c, ne, de, ce] of seed) insert.run(n, d, p, null, st, c, ne, de, ce);
+  for (const [n, d, p250, p1000, c, ne, de] of coffees) {
+    insert.run(`${n} · 250 г`, d, p250, null, 40, c, `${ne} · 250 g`, de, 'Coffee', n, '250 г', '250 g');
+    insert.run(`${n} · 1 кг`, d, p1000, null, 15, c, `${ne} · 1 kg`, de, 'Coffee', n, '1 кг', '1 kg');
+  }
+  insert.run('Набор «Дегустация»', 'Три сорта по 100 г: светлая, средняя и тёмная обжарка', 190000, null, 25, 'Наборы', 'Tasting set', 'Three roasts, 100 g each: light, medium, dark', 'Sets', null, null, null);
+  insert.run('Улун Те Гуан Инь', 'Классический улун с цветочным ароматом. 100 г', 70000, null, 30, 'Чай', 'Tie Guan Yin oolong', 'Classic floral oolong. 100 g', 'Tea', null, null, null);
 }
 
 // ===== Настройки магазина (ключ → JSON), меняются в админке витрины =====
