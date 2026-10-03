@@ -287,6 +287,38 @@
   .bline .bn{flex:1;min-width:0}.bline .bq{color:var(--muted);white-space:nowrap}.bline .bp{font-weight:600;white-space:nowrap}
   .bsave{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--accent);font-size:14px}
   .bsave b{color:var(--ok)}
+  .tools{display:flex;gap:8px;align-items:center;padding:4px 0 2px}
+  .tools select{flex:1;min-width:0;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:999px;padding:9px 14px;font:inherit;font-size:14px;font-weight:600}
+  .tools .chip{white-space:nowrap}
+  .info-strip{display:flex;gap:6px 14px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding:2px 2px 6px}
+  .cartbar{position:fixed;left:16px;right:16px;bottom:calc(var(--tabh) + 24px + env(safe-area-inset-bottom));z-index:7;pointer-events:none}
+  .cartbar button{pointer-events:auto;width:100%;display:flex;justify-content:space-between;align-items:center;border:0;border-radius:18px;padding:14px 18px;color:#fff;font-weight:700;font-size:15px;cursor:pointer;
+    background:linear-gradient(135deg,var(--accent2),var(--accent));box-shadow:0 10px 24px rgba(122,74,43,.38);animation:rise .25s ease both}
+  .carthead{display:flex;justify-content:space-between;align-items:baseline}
+  .linkbtn{border:0;background:none;color:var(--muted);font-size:13px;cursor:pointer;padding:6px 2px;text-decoration:underline;text-underline-offset:3px}
+  .line .rt{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+  .line .rm{font-size:12px}
+  .line .sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .freebar{background:var(--accent-soft);border-radius:16px;padding:12px 14px;margin:0 0 12px;font-size:14px}
+  .freebar.ok{color:var(--ok);font-weight:600;background:rgba(47,158,68,.1)}
+  .freebar .bar{height:7px;border-radius:4px;background:color-mix(in srgb,var(--accent) 18%,transparent);margin-top:8px;overflow:hidden}
+  .freebar .bar i{display:block;height:100%;border-radius:4px;background:linear-gradient(90deg,var(--accent2),var(--accent));transition:width .3s}
+  .stnote{font-size:13px;color:var(--muted);margin:-2px 0 8px}
+  .step button{min-width:40px}
+  .tile{display:flex;gap:12px;align-items:center;width:100%;text-align:left;border:1.5px solid var(--line);background:var(--card);color:var(--text);border-radius:16px;padding:12px 14px;margin-bottom:8px;cursor:pointer;transition:border-color .15s,background .15s}
+  .tile i{font-style:normal;font-size:24px}
+  .tile .tt{font-weight:700} .tile .ts{font-size:12.5px;color:var(--muted);margin-top:1px}
+  .tile .dot{margin-left:auto;width:20px;height:20px;border-radius:50%;border:2px solid var(--line);flex:none}
+  .tile.on{border-color:var(--accent);background:var(--accent-soft)} .tile.on .dot{border-color:var(--accent);background:radial-gradient(var(--accent) 45%,transparent 50%)}
+  .flbl{display:block;font-size:13px;font-weight:600;margin:12px 0 5px}
+  .flbl small{font-weight:400;color:var(--muted)}
+  .fld input.bad,.fld textarea.bad,.fld select.bad{border-color:var(--bad);background:color-mix(in srgb,var(--bad) 6%,var(--card))}
+  .ferr{color:var(--bad);font-size:12.5px;margin-top:4px}
+  .steps2{display:flex;gap:6px 14px;flex-wrap:wrap;margin:2px 0 12px;font-size:13px;color:var(--muted)}
+  .steps2 b{color:var(--accent)}
+  .osum{list-style:none;margin:0 0 4px;padding:0;font-size:14px}
+  .osum li{display:flex;justify-content:space-between;gap:10px;padding:4px 0}
+  .osum li span:first-child{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -297,8 +329,10 @@
   </header>
 
   <section class="view on" id="v-catalog">
+    <div id="infostrip"></div>
     <label class="search">🔍<input id="q" type="search" autocomplete="off"></label>
     <div class="chips" id="chips"></div>
+    <div class="tools" id="tools"></div>
     <main class="grid" id="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div></main>
   </section>
 
@@ -326,6 +360,7 @@
   <button data-tab="admin" id="adminTab" hidden><i>⚙️</i><span data-t="tAdmin"></span><b id="admBadge"></b></button>
 </div></nav>
 
+<div class="cartbar" id="cartbar"></div>
 <div class="veil" id="veil"></div>
 <section class="sheet" id="sheet"></section>
 <div class="toast" id="toast"></div>
@@ -360,6 +395,7 @@ const T = {
 };
 let lang = 'ru', L = T.ru;
 let products = [], cart = {}, cat = null, query = '', tab = 'catalog', orders = null;
+let shopInfo = null, sortBy = '', onlyStock = false, coReady = false;
 
 const $ = id => document.getElementById(id);
 const rub = k => Math.round(k / 100).toLocaleString('ru-RU') + ' ₽';
@@ -455,6 +491,22 @@ const cardHtml = p => `
         <div class="row"><div class="price">${priceText(p)}${bundleSave(p) ? `<div class="was">${rub(bundleSum(p))}</div>` : ''}</div><div data-ctrl="${p.id}">${ctrl(p)}</div></div>`}
     </div>
   </article>`;
+function renderTools() {
+  const ru = lang !== 'en';
+  $('tools').innerHTML = `<select id="sortSel" aria-label="${ru ? 'Сортировка' : 'Sort'}">
+      <option value="" ${!sortBy ? 'selected' : ''}>${ru ? 'Сначала популярные' : 'Popular first'}</option>
+      <option value="asc" ${sortBy === 'asc' ? 'selected' : ''}>${ru ? 'Сначала дешевле' : 'Cheapest first'}</option>
+      <option value="desc" ${sortBy === 'desc' ? 'selected' : ''}>${ru ? 'Сначала дороже' : 'Most expensive first'}</option></select>
+    <button class="chip ${onlyStock ? 'on' : ''}" data-stockonly>${ru ? 'Только в наличии' : 'In stock only'}</button>`;
+  $('sortSel').onchange = e => { sortBy = e.target.value; renderGrid(); };
+}
+function renderInfo() {
+  const i = shopInfo, ru = lang !== 'en', bits = [];
+  if (i && i.freeFrom > 0) bits.push(ru ? `🚚 Бесплатная доставка от ${rub(i.freeFrom)}` : `🚚 Free delivery from ${rub(i.freeFrom)}`);
+  if (i && i.pickup) bits.push(ru ? '🏠 Есть самовывоз' : '🏠 Pickup available');
+  bits.push(ru ? '💳 Оплата картой или СБП' : '💳 Card or SBP payment');
+  $('infostrip').innerHTML = `<div class="info-strip">${bits.map(b => `<span>${b}</span>`).join('')}</div>`;
+}
 function renderChips() {
   const cats = [...new Map(products.filter(p => p.category && !p.is_addon).map(p => [p.category, ct(p)])).entries()];
   $('chips').innerHTML = [`<button class="chip ${cat === null ? 'on' : ''}" data-c="">${L.all}</button>`]
@@ -462,8 +514,11 @@ function renderChips() {
 }
 function renderGrid() {
   const q = query.trim().toLowerCase();
-  const list = products.filter(p => !p.is_addon && (!cat || p.category === cat) &&
+  const list = products.filter(p => !p.is_addon && (!onlyStock || p.stock > 0) && (!cat || p.category === cat) &&
     (!q || [p.name, p.name_en, p.description, p.category, p.category_en].join(' ').toLowerCase().includes(q)));
+  const eff = p => (p.group_key ? Math.min(...siblings(p).map(x => x.price * (isW(x) ? 100 : 1))) : p.price * (isW(p) ? 100 : 1));
+  if (sortBy === 'asc') list.sort((a, b) => eff(a) - eff(b));
+  else if (sortBy === 'desc') list.sort((a, b) => eff(b) - eff(a));
   // варианты одного товара — одна карточка (берём первый в наличии)
   const seen = new Set();
   const uniq = list.filter(p => { if (!p.group_key) return true; if (seen.has(p.group_key)) return false; seen.add(p.group_key); return true; });
@@ -479,17 +534,28 @@ function cartTotals() {
 function renderCart() {
   const { n, sum } = cartTotals();
   $('cartCount').textContent = n || '';
+  const ru = lang !== 'en';
   const lines = Object.entries(cart).map(([id, q]) => ({ p: byId(id), q })).filter(x => x.p);
-  $('v-cart').innerHTML = `<h1>${L.cartTitle}</h1>` + (lines.length ? lines.map(({ p, q }) => `
+  const free = shopInfo && shopInfo.freeFrom > 0 ? shopInfo.freeFrom : 0;
+  const prog = free && lines.length ? (sum >= free
+    ? `<div class="freebar ok"><b>${ru ? '🎉' : ''}</b> ${ru ? 'Доставка будет бесплатной' : 'Delivery will be free'}</div>`
+    : `<div class="freebar"><div>${ru ? `Добавьте ещё на <b>${rub(free - sum)}</b> — и доставка бесплатно` : `Add <b>${rub(free - sum)}</b> more for free delivery`}</div><div class="bar"><i style="width:${Math.min(100, Math.round(sum / free * 100))}%"></i></div></div>`) : '';
+  $('v-cart').innerHTML = `<div class="carthead"><h1>${L.cartTitle}</h1>${lines.length ? `<button class="linkbtn" data-clear>${ru ? 'Очистить' : 'Clear'}</button>` : ''}</div>` + (lines.length ? prog + lines.map(({ p, q }) => `
       <div class="line">
         <div class="thumb" data-open="${p.id}">${photo(p)}</div>
-        <div class="mid"><div class="name">${esc(nm(p))}${isW(p) ? ', ' + gram(q, p.unit) : ''}</div><div class="price">${rub(p.price * q)}</div></div>
-        <div class="step"><button data-dec="${p.id}">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}">+</button></div>
+        <div class="mid"><div class="name">${esc(nm(p))}</div>
+          <div class="sub">${isW(p) ? gram(q, p.unit) + ' · ' + priceText(p) : (q > 1 ? q + ' × ' + rub(p.price) : '')}</div>
+          <div class="price">${rub(p.price * q)}</div></div>
+        <div class="rt"><div class="step"><button data-dec="${p.id}" aria-label="−">−</button><span>${qtyText(p, q)}</span><button data-add="${p.id}" aria-label="+">+</button></div>
+          <button class="linkbtn rm" data-rm="${p.id}">${ru ? 'Убрать' : 'Remove'}</button></div>
       </div>`).join('') + `
       <div class="total"><span>${L.total}</span><b>${rub(sum)}</b></div>
+      <div class="note" style="text-align:left;margin:-6px 0 12px">${ru ? 'Способ получения и стоимость доставки выберете на следующем шаге.' : 'You will choose delivery on the next step.'}</div>
       ${inTg ? '' : `<button class="btn" data-checkout>${L.checkout(rub(sum))}</button>`}
       <div class="note">${L.checkoutNote}</div>`
-    : `<div class="empty"><b>🛒</b>${L.cartEmpty}<br><br><button class="btn ghost" data-tab="catalog">${L.toCatalog}</button></div>`);
+    : `<div class="empty"><b>🛒</b>${L.cartEmpty}<br><span style="font-size:13px">${ru ? 'Загляните в каталог — мы подскажем, что выбрать' : 'Browse the catalog to get started'}</span><br><br><button class="btn" data-tab="catalog">${L.toCatalog}</button></div>`);
+  const bar = $('cartbar');
+  bar.innerHTML = !inTg && n > 0 && tab === 'catalog' ? `<button data-tab="cart"><span>🛒 ${n} · ${rub(sum)}</span><b>${ru ? 'В корзину →' : 'Go to cart →'}</b></button>` : '';
   mainButton();
 }
 function mainButton() {
@@ -540,6 +606,18 @@ async function checkout() {
 }
 
 /* ---------- заказы ---------- */
+function statusHelp(o) {
+  const ru = lang !== 'en', pick = o.pickup;
+  const m = {
+    awaiting_payment: ru ? 'Ждём оплату. Нажмите «Оплатить» ниже — ссылка действует недолго.' : 'Waiting for payment. Tap Pay below.',
+    paid: ru ? 'Оплата получена. Скоро начнём собирать заказ.' : 'Payment received. We will start packing soon.',
+    assembling: ru ? 'Собираем ваш заказ.' : 'We are packing your order.',
+    shipped: pick ? (ru ? 'Заказ готов к выдаче — приходите, мы ждём.' : 'Ready for pickup.') : (ru ? 'Заказ отправлен. Трек-номер появится ниже, если он есть.' : 'Your order is on its way.'),
+    delivered: pick ? (ru ? 'Заказ выдан. Спасибо, что выбрали нас!' : 'Picked up. Thank you!') : (ru ? 'Заказ доставлен. Приятного!' : 'Delivered. Enjoy!'),
+    cancelled: ru ? 'Заказ отменён. Если оплата была — деньги вернутся.' : 'Order cancelled. If paid, you will be refunded.',
+  };
+  return m[o.status] || '';
+}
 async function loadOrders() {
   $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1><div class="skel" style="aspect-ratio:3/1"></div>`;
   let subsData = { subscriptions: [], intervals: [] };
@@ -560,6 +638,7 @@ async function loadOrders() {
   $('v-orders').innerHTML = `<h1>${L.ordersTitle}</h1>` + subsHtml + (orders.length ? orders.map(o => `
     <div class="order">
       <div class="top"><span class="code">№ ${esc(o.code)}</span><span class="pill ${esc(o.status)}">${esc(o.statusLabel)}</span></div>
+      <div class="stnote">${esc(statusHelp(o))}</div>
       ${o.step >= 0 ? `<div class="steps">${(lang === 'en' ? ['Paid', 'Packing', o.pickup ? 'Ready' : 'Shipped', o.pickup ? 'Picked up' : 'Delivered'] : ['Оплачен', 'Собираем', o.pickup ? 'Готов' : 'Отправлен', o.pickup ? 'Получен' : 'Доставлен'])
         .map((n, i) => `<div class="${i < o.step || o.step === 3 ? 'done' : i === o.step ? 'now' : ''}">${n}</div>`).join('')}</div>` : ''}
       <ul>${o.items.map(i => `<li><span>${esc(i.name)}${i.unit ? ', ' + gram(i.qty, i.unit) : ' × ' + i.qty}</span><span>${rub(i.price * i.qty)}</span></li>`).join('')}
@@ -628,6 +707,7 @@ function renderSheet() {
       ${stock}
       ${weightHint}
       <div class="act"><div class="price">${priceText(p)}</div>${act}</div>
+      ${q ? `<button class="btn ghost" data-gocart style="margin-top:10px">${lang === 'en' ? 'Go to cart' : 'Перейти в корзину'} · ${rub(cartTotals().sum)}</button>` : ''}
       ${addHtml}
     </div>`;
 }
@@ -637,6 +717,7 @@ function closeSheet() { openId = null; document.body.classList.remove('open'); i
 /* ---------- вкладки ---------- */
 function go(t) {
   tab = t;
+  if (typeof renderCart === 'function' && products.length) renderCart();
   document.querySelectorAll('section.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + t));
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === (t === 'checkout' ? 'cart' : t)));
   if (t === 'orders') loadOrders();
@@ -648,10 +729,14 @@ function go(t) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-add],[data-dec],[data-setq],[data-open],[data-variant],[data-close],[data-c],[data-tab],[data-lang],[data-hint],[data-checkout],[data-retry]');
+  const t = e.target.closest('[data-add],[data-dec],[data-setq],[data-rm],[data-clear],[data-stockonly],[data-gocart],[data-open],[data-variant],[data-close],[data-c],[data-tab],[data-lang],[data-hint],[data-checkout],[data-retry]');
   if (!t) return;
   const d = t.dataset;
-  if (d.setq) { e.stopPropagation(); const [id, v] = d.setq.split(':').map(Number); setQty(id, cart[id] === v ? 0 : v); }
+  if (d.stockonly !== undefined) { onlyStock = !onlyStock; renderTools(); renderGrid(); }
+  else if (d.rm) { e.stopPropagation(); setQty(+d.rm, 0); }
+  else if (d.clear !== undefined) { ask(lang === 'en' ? 'Clear the cart?' : 'Очистить корзину?').then(ok => { if (ok) Object.keys(cart).forEach(id => setQty(+id, 0)); }); }
+  else if (d.gocart !== undefined) { closeSheet(); go('cart'); }
+  else if (d.setq) { e.stopPropagation(); const [id, v] = d.setq.split(':').map(Number); setQty(id, cart[id] === v ? 0 : v); }
   else if (d.add) { e.stopPropagation(); change(+d.add, 1); }
   else if (d.dec) { e.stopPropagation(); change(+d.dec, -1); }
   else if (d.c !== undefined) { cat = d.c || null; renderChips(); renderGrid(); }
@@ -663,7 +748,7 @@ document.addEventListener('click', e => {
   else if (d.checkout !== undefined) openCheckout();
   else if (d.retry !== undefined) load();
   else if (d.lang && d.lang !== lang) {
-    lang = d.lang; applyLang(); renderChips(); renderGrid(); renderCart();
+    lang = d.lang; applyLang(); renderChips(); renderTools(); renderInfo(); renderGrid(); renderCart();
     if (tab === 'orders') loadOrders();
     api('/lang', { lang }).catch(() => {});
   }
@@ -1098,9 +1183,12 @@ const coCost = () => {
 async function openCheckout() {
   if (!cartTotals().n) { toast(L.cartEmpty); return; }
   go('checkout');
-  if (!coInfo) {
-    $('v-checkout').innerHTML = `<h1>Оформление</h1><div class="skel" style="aspect-ratio:3/1"></div>`;
-    try { coInfo = await api('/checkout-info'); } catch (e) { $('v-checkout').innerHTML = `<h1>Оформление</h1><div class="empty">${esc(e.message)}</div>`; return; }
+  if (!coReady) {
+    if (!shopInfo) {
+      $('v-checkout').innerHTML = `<h1>Оформление</h1><div class="skel" style="aspect-ratio:3/1"></div>`;
+      try { shopInfo = await api('/checkout-info'); } catch (e) { $('v-checkout').innerHTML = `<h1>Оформление</h1><div class="empty">${esc(e.message)}<br><br><button class="btn ghost" data-checkout>Повторить</button></div>`; return; }
+    }
+    coInfo = shopInfo;
     if (!co.city && coInfo.cities.length) co.city = (coInfo.cities.find(c => /петербург/i.test(c.city)) || coInfo.cities[0]).city;
     if (!co.city) co.city = '__other';
     if (!coInfo.pickup && co.delivery === 'pickup') co.delivery = 'city';
@@ -1108,8 +1196,18 @@ async function openCheckout() {
     const saved = String(coInfo.contact || '').split(/\s+/);
     if (!co.phone) co.phone = saved.find(x => !x.includes('@') && x.replace(/\D/g, '').length >= 10) || '';
     if (!co.email) co.email = saved.find(x => x.includes('@')) || '';
+    coReady = true;
   }
+  co.err = {};
   renderCheckout();
+}
+// поле с подписью и сообщением об ошибке
+const fld = (id, label, inner, hint = '') => `<div class="fld"><label class="flbl" for="${id}">${label}${hint ? ` <small>${hint}</small>` : ''}</label>${inner}${co.err && co.err[id] ? `<div class="ferr">${esc(co.err[id])}</div>` : ''}</div>`;
+const bad = id => (co.err && co.err[id] ? ' bad' : '');
+function coFail(id, msg) {
+  co.err = { [id]: msg }; renderCheckout();
+  const el = $(id); if (el) { el.focus({ preventScroll: true }); el.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  haptic('heavy'); toast(msg);
 }
 function renderCheckout() {
   const { sum } = cartTotals();
@@ -1117,31 +1215,37 @@ function renderCheckout() {
   const dcost = coCost();
   const total = sum - disc + (dcost || 0);
   const cityName = c => (lang === 'en' && c.city_en) || c.city;
-  const methods = [['city', '🚚 Курьер'], ...(coInfo.pickup ? [['pickup', '🏠 Самовывоз']] : []), ...(coInfo.post ? [['post', '📦 СДЭК / Почта']] : []), ...(coInfo.distance ? [['distance', '📍 По расстоянию']] : [])];
-  const addrBox = `<div class="fld"><textarea id="coAddr" placeholder="Улица, дом, квартира, подъезд">${esc(co.address)}</textarea></div>`;
+  const minCity = coInfo.cities.length ? Math.min(...coInfo.cities.map(c => c.price)) : coInfo.otherPrice;
+  const tiles = [
+    ['city', '🚚', 'Курьер по городу', `от ${rub(minCity)} · привезём домой`],
+    ...(coInfo.pickup ? [['pickup', '🏠', 'Самовывоз', 'бесплатно · заберёте сами']] : []),
+    ...(coInfo.post ? [['post', '📦', 'СДЭК / Почта России', `от ${rub(Math.min(...coInfo.post.carriers.map(c => c.price)))} · в другой город`]] : []),
+    ...(coInfo.distance ? [['distance', '📍', 'Доставка по расстоянию', `до ${coInfo.distance.maxKm} км · цена по адресу`]] : []),
+  ];
+  const lines = Object.entries(cart).map(([id, q]) => ({ p: byId(id), q })).filter(x => x.p);
+  const addr = (ph = 'Улица, дом, квартира, подъезд') => fld('coAddr', 'Адрес', `<textarea id="coAddr" class="${bad('coAddr')}" placeholder="${ph}">${esc(co.address)}</textarea>`);
   let body;
-  if (co.delivery === 'pickup') body = `<div class="note" style="text-align:left;margin-top:10px">${coInfo.pickupAddress ? '📍 ' + esc(coInfo.pickupAddress) + '<br>' : ''}Напишем в чат, когда заказ будет готов к выдаче.</div>`;
-  else if (co.delivery === 'city') body = `
-        <div class="fld"><select id="coCity">${coInfo.cities.map(c => `<option value="${esc(c.city)}" ${co.city === c.city ? 'selected' : ''}>${esc(cityName(c))} — ${rub(c.price)}</option>`).join('')}
-          <option value="__other" ${co.city === '__other' ? 'selected' : ''}>Другой город — ${rub(coInfo.otherPrice)}</option></select></div>
-        ${co.city === '__other' ? `<div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>` : ''}${addrBox}`;
-  else if (co.delivery === 'post') body = `
-        <div class="fld"><select id="coCarrier">${(coInfo.post.carriers).map(c => `<option value="${esc(c.id)}" ${co.carrier === c.id ? 'selected' : ''}>${esc(c.name)} — ${rub(c.price)}</option>`).join('')}</select></div>
-        <div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>
-        <div class="fld"><textarea id="coAddr" placeholder="Адрес получения: улица, дом, квартира или пункт выдачи, индекс">${esc(co.address)}</textarea></div>
-        <div class="note" style="text-align:left">Отправим выбранным перевозчиком, пришлём трек-номер в чат.</div>`;
-  else body = `
-        <div class="fld"><input id="coOther" placeholder="Город" value="${esc(co.other)}"></div>${addrBox}
-        <button class="btn ghost" data-quote style="margin-top:6px">Рассчитать стоимость</button>
-        <div class="note" style="text-align:left">${co.quote && co.quote.key === coKey() ? `Расстояние ≈ ${co.quote.km} км — доставка ${rub(co.quote.delivery)}` : `Возим до ${coInfo.distance.maxKm} км. Стоимость зависит от расстояния до вашего адреса.`}</div>`;
+  if (co.delivery === 'pickup') body = `<div class="note" style="text-align:left;margin:4px 0 0">${coInfo.pickupAddress ? '📍 ' + esc(coInfo.pickupAddress) + '<br>' : ''}Напишем в чат, когда заказ будет готов к выдаче.</div>`;
+  else if (co.delivery === 'city') body = fld('coCity', 'Город', `<select id="coCity">${coInfo.cities.map(c => `<option value="${esc(c.city)}" ${co.city === c.city ? 'selected' : ''}>${esc(cityName(c))} — ${rub(c.price)}</option>`).join('')}
+          <option value="__other" ${co.city === '__other' ? 'selected' : ''}>Другой город — ${rub(coInfo.otherPrice)}</option></select>`)
+    + (co.city === '__other' ? fld('coOther', 'Название города', `<input id="coOther" class="${bad('coOther')}" placeholder="Например, Тверь" value="${esc(co.other)}">`) : '') + addr();
+  else if (co.delivery === 'post') body = fld('coCarrier', 'Перевозчик', `<select id="coCarrier">${coInfo.post.carriers.map(c => `<option value="${esc(c.id)}" ${co.carrier === c.id ? 'selected' : ''}>${esc(c.name)} — ${rub(c.price)}</option>`).join('')}</select>`)
+    + fld('coOther', 'Город', `<input id="coOther" class="${bad('coOther')}" placeholder="Город получателя" value="${esc(co.other)}">`) + addr('Улица, дом, квартира — или пункт выдачи и индекс')
+    + `<div class="note" style="text-align:left">Отправим выбранным перевозчиком и пришлём трек-номер в этот чат.</div>`;
+  else body = fld('coOther', 'Город', `<input id="coOther" class="${bad('coOther')}" placeholder="Ваш город" value="${esc(co.other)}">`) + addr()
+    + `<button class="btn ghost" data-quote style="margin-top:8px">Рассчитать стоимость</button>
+       <div class="note" style="text-align:left">${co.quote && co.quote.key === coKey() ? `✓ Расстояние ≈ ${co.quote.km} км — доставка ${rub(co.quote.delivery)}` : `Возим до ${coInfo.distance.maxKm} км. Стоимость зависит от расстояния до вашего адреса.`}</div>`;
   $('v-checkout').innerHTML = `<h1>Оформление</h1>
-    <div class="box"><h3>Получение</h3>
-      ${methods.length > 1 ? `<div class="seg" style="flex-wrap:wrap">${methods.map(([k, n]) => `<button data-dl="${k}" class="${co.delivery === k ? 'on' : ''}">${n}</button>`).join('')}</div>` : ''}
-      ${co.delivery !== 'pickup' && coInfo.freeFrom > 0 ? `<div class="note" style="text-align:left;margin:0 0 6px">${coFree() ? 'Доставка бесплатно' : `Бесплатная доставка от ${rub(coInfo.freeFrom)} — осталось ${rub(coInfo.freeFrom - coGoods())}`}</div>` : ''}
-      ${body}
-      <div class="fld"><input id="coPhone" type="tel" inputmode="tel" placeholder="Телефон" value="${esc(co.phone)}"></div>
-      ${coInfo.receipts ? `<div class="fld"><input id="coEmail" type="email" inputmode="email" placeholder="E-mail для чека (необязательно, если указан телефон)" value="${esc(co.email)}"></div>
-        <div class="note" style="text-align:left">После оплаты чек придёт на телефон или e-mail.</div>` : ''}
+    <div class="steps2"><b>① Получение</b><span>② Оплата</span><span>③ Статус в чате</span></div>
+    <div class="box"><h3>Ваш заказ</h3>
+      <ul class="osum">${lines.map(({ p, q }) => `<li><span>${esc(nm(p))}${isW(p) ? ', ' + gram(q, p.unit) : q > 1 ? ' × ' + q : ''}</span><span>${rub(p.price * q)}</span></li>`).join('')}</ul></div>
+    <div class="box"><h3>Как получить</h3>
+      ${tiles.map(([k, ic, t, sub]) => `<button class="tile ${co.delivery === k ? 'on' : ''}" data-dl="${k}"><i>${ic}</i><span><div class="tt">${t}</div><div class="ts">${sub}</div></span><span class="dot"></span></button>`).join('')}
+      ${co.delivery !== 'pickup' && coInfo.freeFrom > 0 ? `<div class="note" style="text-align:left;margin:0 0 4px">${coFree() ? '✓ Доставка для вас бесплатная' : `Бесплатная доставка от ${rub(coInfo.freeFrom)} — осталось ${rub(coInfo.freeFrom - coGoods())}`}</div>` : ''}
+      ${body}</div>
+    <div class="box"><h3>Контакты</h3>
+      ${fld('coPhone', 'Телефон', `<input id="coPhone" class="${bad('coPhone')}" type="tel" inputmode="tel" autocomplete="tel" placeholder="+7 900 000-00-00" value="${esc(co.phone)}">`, 'чтобы связаться по заказу')}
+      ${coInfo.receipts ? fld('coEmail', 'E-mail', `<input id="coEmail" class="${bad('coEmail')}" type="email" inputmode="email" autocomplete="email" placeholder="name@mail.ru" value="${esc(co.email)}">`, 'необязательно — для чека') + `<div class="note" style="text-align:left">Чек придёт после оплаты на телефон или e-mail.</div>` : ''}
     </div>
     <div class="box"><h3>Промокод</h3>
       <div class="promo"><input id="coPromo" placeholder="Если есть" value="${esc(co.promo)}" autocapitalize="characters"><button class="btn ghost" data-promo>Применить</button></div>
@@ -1150,12 +1254,13 @@ function renderCheckout() {
     <div class="box">
       <div class="sumrow"><span>Товары</span><span>${rub(sum)}</span></div>
       ${disc ? `<div class="sumrow"><span>Скидка ${co.promoPct}%</span><span>−${rub(disc)}</span></div>` : ''}
-      <div class="sumrow"><span>Доставка</span><span>${co.delivery === 'pickup' || coFree() ? 'бесплатно' : dcost == null ? 'считаем по адресу' : rub(dcost)}</span></div>
-      <div class="sumrow big"><span>Итого</span><span>${dcost == null ? '—' : rub(total)}</span></div>
+      <div class="sumrow"><span>Доставка</span><span>${co.delivery === 'pickup' || coFree() ? 'бесплатно' : dcost == null ? 'посчитаем по адресу' : rub(dcost)}</span></div>
+      <div class="sumrow big"><span>К оплате</span><span>${dcost == null ? '—' : rub(total)}</span></div>
     </div>
     ${inTg ? '' : `<button class="btn" data-pay>${dcost == null ? 'Рассчитать и оформить' : 'Оплатить · ' + rub(total)}</button>`}
-    <div class="note">${L.checkoutNote}</div>`;
-  const bind = (id, k, rerender) => { const el = $(id); if (el) el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = e => { co[k] = e.target.value; if (rerender) renderCheckout(); else mainButton(); }; };
+    <div class="note">${L.checkoutNote} Деньги списываются только после вашего подтверждения оплаты.</div>`;
+  const clr = el => { el.classList.remove('bad'); el.closest('.fld')?.querySelector('.ferr')?.remove(); if (co.err) delete co.err[el.id]; };
+  const bind = (id, k, rerender) => { const el = $(id); if (el) el[el.tagName === 'SELECT' ? 'onchange' : 'oninput'] = e => { co[k] = e.target.value; clr(el); if (rerender) renderCheckout(); else mainButton(); }; };
   bind('coCity', 'city', true); bind('coCarrier', 'carrier', true); bind('coOther', 'other'); if ($('coOther') && co.delivery === 'city') $('coOther').onchange = () => renderCheckout();
   bind('coAddr', 'address'); bind('coPhone', 'phone'); bind('coEmail', 'email'); bind('coPromo', 'promo');
   if ($('coAddr') && co.delivery === 'distance') $('coAddr').onchange = () => renderCheckout();
@@ -1181,11 +1286,11 @@ let paying = false;
 async function pay() {
   if (paying) return;
   const m = co.delivery;
-  if (m === 'city' && co.city === '__other' && co.other.trim().length < 2) { toast('Укажите город'); $('coOther')?.focus(); return; }
-  if ((m === 'post' || m === 'distance') && co.other.trim().length < 2) { toast('Укажите город'); $('coOther')?.focus(); return; }
-  if (m !== 'pickup' && co.address.trim().length < 5) { toast('Укажите адрес доставки'); $('coAddr')?.focus(); return; }
-  if (co.phone.replace(/\D/g, '').length < 10 && !(co.email && coInfo.receipts)) { toast('Укажите телефон'); $('coPhone')?.focus(); return; }
-  if (co.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(co.email.trim())) { toast('Проверьте e-mail'); $('coEmail')?.focus(); return; }
+  if (m === 'city' && co.city === '__other' && co.other.trim().length < 2) return coFail('coOther', 'Укажите город');
+  if ((m === 'post' || m === 'distance') && co.other.trim().length < 2) return coFail('coOther', 'Укажите город');
+  if (m !== 'pickup' && co.address.trim().length < 5) return coFail('coAddr', 'Укажите адрес: улица, дом, квартира');
+  if (co.phone.replace(/\D/g, '').length < 10 && !(co.email && coInfo.receipts)) return coFail('coPhone', 'Введите телефон полностью, например +7 900 123-45-67');
+  if (co.email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(co.email.trim())) return coFail('coEmail', 'Проверьте e-mail — например, name@mail.ru');
   if (m === 'distance' && coCost() == null) { await quoteDistance(); return; } // сначала покажем цену, потом оплата
   if (co.promo && !co.promoPct) { await applyPromo(); if (!co.promoPct) return; }
   paying = true; tg?.MainButton?.showProgress?.();
@@ -1261,7 +1366,8 @@ async function load() {
     isOwner = Boolean(d.isOwner);
     $('adminTab').hidden = !isOwner; $('tabs').classList.toggle('five', isOwner);
     if (isOwner) setUnread(d.unread);
-    renderChips(); renderGrid(); renderCart();
+    renderChips(); renderTools(); renderInfo(); renderGrid(); renderCart();
+    api('/checkout-info').then(d => { shopInfo = d; renderInfo(); renderCart(); }).catch(() => {});
     const qs = new URLSearchParams(location.search), want = qs.get('tab');
     if (isOwner && want === 'admin' && ADM.some(a => a[0] === qs.get('adm'))) { admMode = qs.get('adm'); chatOpen = +qs.get('chat') || null; }
     if (!startTabDone && ['cart', 'orders', 'ai'].concat(isOwner ? ['admin'] : []).includes(want)) go(want);
