@@ -749,6 +749,26 @@ bot.command('deldelivery', isOwner, (ctx) => {
   );
 });
 
+// /stock без аргументов — присылает таблицу склада (CSV для Excel); обратно её можно отправить боту файлом
+bot.command('stock', isOwner, async (ctx, next) => {
+  if (ctx.message.text.trim().split(/\s+/).length > 1) return next();
+  const { exportCsv } = require('./stock');
+  await ctx.replyWithDocument({ source: Buffer.from(exportCsv(), 'utf8'), filename: 'sklad.csv' },
+    { caption: '📦 Склад. Откройте в Excel, поменяйте «цена_руб» и «остаток» (id не трогайте), сохраните как CSV и отправьте файл сюда — всё обновится. Новая строка без id создаст товар.' });
+});
+bot.on('document', isOwner, async (ctx) => {
+  const d = ctx.message.document;
+  if (!/\.csv$/i.test(d.file_name || '')) return ctx.reply('Для склада пришлите файл .csv (в Excel: Сохранить как → CSV UTF-8).');
+  if (d.file_size > 2e6) return ctx.reply('Файл слишком большой.');
+  try {
+    const { importCsv, reportText } = require('./stock');
+    const text = await require('axios').get(String(await ctx.telegram.getFileLink(d.file_id)), { responseType: 'text', timeout: 15000 }).then((r) => r.data);
+    const r = importCsv(text);
+    await ctx.reply(reportText(r));
+    checkLowStock(bot);
+  } catch (e) { ctx.reply('Не получилось: ' + e.message); }
+});
+
 bot.command('stock', isOwner, (ctx) => {
   // формат: /stock <id_товара> <новый_остаток>
   const [, id, qty] = ctx.message.text.split(' ');
