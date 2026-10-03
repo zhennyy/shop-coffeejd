@@ -29,10 +29,10 @@ function findPromo(code) {
 }
 
 // Итог: товары со скидкой + доставка (с учётом «бесплатно от»)
-function quote(goodsTotal, percent, city /* null = самовывоз */) {
+function quote(goodsTotal, percent, city /* null = самовывоз */, fixedDelivery /* коп.: цена СДЭК/по расстоянию вместо городского тарифа */) {
   const goods = percent > 0 ? Math.round((goodsTotal * (100 - percent)) / 100) : goodsTotal;
   const ds = db.getDeliverySettings();
-  let delivery = city == null ? 0 : deliveryPrice(city);
+  let delivery = city == null ? 0 : fixedDelivery != null ? fixedDelivery : deliveryPrice(city);
   if (city != null && ds.freeFrom > 0 && goods >= ds.freeFrom) delivery = 0;
   return { goods, delivery, total: goods + delivery };
 }

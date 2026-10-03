@@ -206,6 +206,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
           track: o.track || '',
           rating: o.rating || 0,
           can_pay: status === 'awaiting_payment',
+          can_subscribe: orders.PAID.has(status) && Boolean(o.delivery_method),
           total: o.total,
           delivery_cost: o.delivery_cost || 0,
           address: o.address || '',
@@ -416,11 +417,39 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   const pricing = require('./pricing');
   const { getCart } = require('./cart');
 
+  const delivery = require('./delivery');
+  const core = require('./checkout-core');
+  const receipt = require('./payments/receipt');
+  const subs = require('./subscriptions');
+  const { startPayment } = require('./payments/start');
+  const sendErr = (res, e, fallback = 'Что-то пошло не так, попробуйте ещё раз') => res.status(e.expose ? 400 : 500).json({ error: e.expose ? e.message : fallback });
+
   app.get('/shop-api/checkout-info', shopAuth, (req, res) => {
     const cities = db.prepare('SELECT city, city_en, price FROM delivery_rates WHERE active = 1 ORDER BY city').all();
-    const ds = db.getDeliverySettings();
+    const ds = db.getDeliverySettings(), d2 = delivery.get();
     res.json({ cities, otherPrice: ds.otherPrice, freeFrom: ds.freeFrom, pickup: ds.pickup, pickupAddress: ds.pickupAddress,
-      payOnline: Boolean(process.env.YOOKASSA_SHOP_ID && process.env.YOOKASSA_SECRET_KEY) });
+      payOnline: Boolean(process.env.YOOKASSA_SHOP_ID && process.env.YOOKASSA_SECRET_KEY),
+      post: d2.post.enabled ? { carriers: d2.post.carriers.map(({ id, name, price }) => ({ id, name, price })) } : null,
+      distance: d2.distance.enabled && d2.distance.origin.lat != null ? { maxKm: Math.max(...d2.distance.tiers.map((t) => t.km)), tiers: d2.distance.tiers } : null,
+      receipts: receipt.enabled(),
+      contact: db.prepare('SELECT contact FROM user_settings WHERE chat_id = ?').get(req.chatId)?.contact || '' });
+  });
+
+  // Живой расчёт доставки для витрины (нужен для «по расстоянию»; остальное считается на месте)
+  const quoteBusy = new Map();
+  app.post('/shop-api/delivery-quote', shopAuth, async (req, res) => {
+    const last = quoteBusy.get(req.chatId) || 0;
+    if (Date.now() - last < 1000) return res.status(429).json({ error: 'Секунду…' });
+    quoteBusy.set(req.chatId, Date.now());
+    if (quoteBusy.size > 1000) quoteBusy.clear();
+    try {
+      const b = req.body || {};
+      const { total } = getCart(req.chatId);
+      let promo = { percent: 0 };
+      try { promo = findPromo(b.promo); } catch { /* неверный промокод на цену доставки не влияет */ }
+      const r = await core.resolve({ method: b.delivery, city: b.city, carrier: b.carrier, addr: b.address }, total, promo.percent, db.getLang(req.chatId));
+      res.json({ ok: true, delivery: r.delivery, km: r.km || null, total: r.total });
+    } catch (e) { sendErr(res, e, 'Не получилось рассчитать доставку'); }
   });
 
   const findPromo = pricing.findPromo;
@@ -433,6 +462,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
     const chatId = req.chatId;
     if (orderBusy.has(chatId)) return res.status(429).json({ error: 'Секунду, оформляем…' });
     orderBusy.add(chatId);
+    let orderId = null;
     try {
       const lang = db.getLang(chatId);
       const b = req.body || {};
@@ -441,49 +471,62 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       for (const i of items) {
         if (i.stock < i.quantity) return res.status(400).json({ error: t(lang, 'insufficientStock', (lang === 'en' && i.name_en) || i.name, i.stock) });
       }
-      // доставка
-      let deliveryCity = null, deliveryCost = 0, address;
-      const addr = String(b.address || '').trim().slice(0, 300);
-      const ds = db.getDeliverySettings();
-      if (b.delivery === 'pickup') {
-        if (!ds.pickup) return res.status(400).json({ error: 'Самовывоза сейчас нет — выберите доставку' });
-        address = t(lang, 'pickupSet');
-      } else {
-        const city = String(b.city || '').trim().slice(0, 80);
-        if (!city) return res.status(400).json({ error: 'Выберите город' });
-        if (addr.length < 5) return res.status(400).json({ error: 'Укажите адрес: улица, дом, квартира' });
-        const known = pricing.findCity(city);
-        deliveryCity = known ? known.city : city;
-        address = `${deliveryCity}, ${addr}`;
-      }
-      const phone = String(b.phone || '').trim().slice(0, 30);
+      // контакт: телефон и/или e-mail; для чека 54-ФЗ нужен хотя бы один корректный
+      const phone = String(b.phone || '').trim().slice(0, 30), email = String(b.email || '').trim().slice(0, 80);
       if (phone && phone.replace(/\D/g, '').length < 10) return res.status(400).json({ error: 'Проверьте номер телефона' });
-      if (phone) address += ` · тел. ${phone}`;
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return res.status(400).json({ error: 'Проверьте e-mail' });
+      const contact = [phone, email].filter(Boolean).join(' ') || null;
+      if (receipt.enabled() && !receipt.contactFrom(contact)) return res.status(400).json({ error: 'Для чека укажите телефон или e-mail' });
       let promo;
       try { promo = findPromo(b.promo); } catch (e) { return res.status(400).json({ error: e.message }); }
-      const q = pricing.quote(total, promo.percent, deliveryCity); // доставка, «бесплатно от», скидка
-      deliveryCost = q.delivery;
-      const finalTotal = q.total;
+      const rs = await core.resolve({ method: b.delivery, city: b.city, carrier: b.carrier, addr: b.address }, total, promo.percent, lang);
+      const address = phone ? `${rs.address} · тел. ${phone}` : rs.address;
 
-      const orderId = createPendingOrder(chatId, address, 'yookassa', finalTotal, promo.code, promo.percent, deliveryCity, deliveryCost);
+      orderId = createPendingOrder(chatId, address, 'yookassa', rs.total, promo.code, promo.percent, rs.deliveryCity, rs.delivery, rs.method, contact,
+        { carrier: rs.carrier, addrRaw: rs.addrRaw });
       const code = db.prepare('SELECT order_code FROM orders WHERE id = ?').get(orderId).order_code || String(orderId);
-
-      const { createPayment } = require('./payments/yookassa');
-      const payment = await createPayment(orderId, finalTotal / 100, `Заказ #${code}`);
-      db.prepare('UPDATE orders SET status = ?, payment_id = ? WHERE id = ?').run(`awaiting_payment:${payment.id}`, payment.id, orderId);
+      const payment = await startPayment(orderId);
       db.prepare('DELETE FROM cart_items WHERE chat_id = ?').run(chatId); // корзина превратилась в заказ
+      if (contact) db.prepare(`INSERT INTO user_settings (chat_id, lang, contact) VALUES (?, ?, ?)
+                               ON CONFLICT(chat_id) DO UPDATE SET contact = excluded.contact`).run(chatId, lang, contact);
       const url = payment.confirmation.confirmation_url;
       // ссылка на оплату — ещё и в чат, чтобы не потерялась
       bot.telegram.sendMessage(chatId, t(lang, 'payLinkText', code), {
         reply_markup: { inline_keyboard: [[{ text: t(lang, 'payUrlButton'), url }]] },
       }).catch(() => {});
-      res.json({ ok: true, id: orderId, code, total: finalTotal, pay_url: url });
+      res.json({ ok: true, id: orderId, code, total: rs.total, pay_url: url });
     } catch (e) {
+      if (orderId) db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ? AND payment_id IS NULL").run(orderId); // оплата не создалась — заказ не висит
+      if (e.expose) return res.status(400).json({ error: e.message });
       console.error('Витрина: не удалось оформить заказ', e.response?.data || e.message);
       res.status(502).json({ error: 'Не получилось создать оплату. Попробуйте ещё раз через минуту' });
     } finally {
       orderBusy.delete(chatId);
     }
+  });
+
+  // ===== Повторить заказ и подписки =====
+  app.post('/shop-api/orders/:id/repeat', shopAuth, (req, res) => { // собрать корзину из прошлого заказа
+    const o = db.prepare('SELECT id FROM orders WHERE id = ? AND chat_id = ?').get(parseInt(req.params.id, 10), req.chatId);
+    if (!o) return res.status(404).json({ error: 'Заказ не найден' });
+    const its = db.prepare(`SELECT oi.product_id, oi.quantity, p.stock FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?`).all(o.id);
+    let added = 0, missing = 0;
+    for (const i of its) {
+      const q = Math.min(i.quantity, i.stock);
+      if (q <= 0) { missing++; continue; }
+      if (q < i.quantity) missing++;
+      db.prepare(`INSERT INTO cart_items (chat_id, product_id, quantity) VALUES (?,?,?)
+                  ON CONFLICT(chat_id, product_id) DO UPDATE SET quantity = excluded.quantity`).run(req.chatId, i.product_id, q);
+      added++;
+    }
+    res.json({ ok: true, added, missing, cart: cartMap(req.chatId) });
+  });
+  app.get('/shop-api/subscriptions', shopAuth, (req, res) => res.json({ subscriptions: subs.list(req.chatId, db.getLang(req.chatId)), intervals: subs.INTERVALS }));
+  app.post('/shop-api/subscriptions', shopAuth, (req, res) => {
+    try { res.json({ ok: true, id: subs.create(req.chatId, parseInt(req.body.order_id, 10), parseInt(req.body.days, 10)) }); } catch (e) { sendErr(res, e); }
+  });
+  app.post('/shop-api/subscriptions/:id', shopAuth, (req, res) => {
+    try { subs.update(req.chatId, parseInt(req.params.id, 10), { action: String(req.body.action || ''), days: parseInt(req.body.days, 10) }); res.json({ ok: true }); } catch (e) { sendErr(res, e); }
   });
 
   // Ссылка «Оплатить» для заказа, который ещё ждёт оплату

@@ -7,7 +7,7 @@ const auth = {
   password: process.env.YOOKASSA_SECRET_KEY,
 };
 
-async function createPayment(orderId, amountRub, description) {
+async function createPayment(orderId, amountRub, description, receipt) {
   const idempotenceKey = uuidv4();
   const res = await axios.post(
     'https://api.yookassa.ru/v3/payments',
@@ -17,6 +17,7 @@ async function createPayment(orderId, amountRub, description) {
       capture: true,
       description,
       metadata: { order_id: orderId, app: 'zernobot' },
+      ...(receipt ? { receipt } : {}),
     },
     { auth, headers: { 'Idempotence-Key': idempotenceKey } }
   );

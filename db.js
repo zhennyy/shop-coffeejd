@@ -224,6 +224,34 @@ if (deliveryCount === 0) {
   insertRate.run('Вологда', 'Vologda', 70000);
 }
 
+// заказы: способ доставки, контакт для чека; подписки (повторные заказы); телефон/e-mail покупателя
+const oc2 = db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name);
+if (!oc2.includes('delivery_method')) db.exec('ALTER TABLE orders ADD COLUMN delivery_method TEXT');
+if (!oc2.includes('contact')) db.exec('ALTER TABLE orders ADD COLUMN contact TEXT');
+if (!oc2.includes('carrier')) db.exec('ALTER TABLE orders ADD COLUMN carrier TEXT');
+if (!oc2.includes('addr_raw')) db.exec('ALTER TABLE orders ADD COLUMN addr_raw TEXT');
+const uc2 = db.prepare('PRAGMA table_info(user_settings)').all().map((c) => c.name);
+if (!uc2.includes('contact')) db.exec('ALTER TABLE user_settings ADD COLUMN contact TEXT');
+db.exec(`
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id INTEGER NOT NULL,
+  items TEXT NOT NULL,              -- JSON [{product_id, quantity}]
+  interval_days INTEGER NOT NULL,
+  next_date TEXT NOT NULL,          -- YYYY-MM-DD
+  active INTEGER NOT NULL DEFAULT 1,
+  delivery_method TEXT,             -- pickup | city | post | distance
+  delivery_city TEXT,
+  carrier TEXT,
+  address TEXT,                     -- адрес без города
+  contact TEXT,
+  last_order_id INTEGER,
+  postponed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS subscriptions_due ON subscriptions (active, next_date);
+`);
+
 // сидим тестовые товары, если каталог пуст
 const count = db.prepare('SELECT COUNT(*) AS c FROM products').get().c;
 if (count === 0) {

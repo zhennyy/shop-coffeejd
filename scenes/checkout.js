@@ -195,9 +195,16 @@ checkoutScene.action('checkout_cancel', async (ctx) => {
 });
 
 checkoutScene.action('pay_yookassa', async (ctx) => {
-  const { createPayment } = require('../payments/yookassa');
+  const { startPayment } = require('../payments/start');
+  const receipt = require('../payments/receipt');
   const lang = db.getLang(ctx.chat.id);
   await ctx.answerCbQuery();
+  // чек 54-ФЗ: нужен телефон или e-mail. В чате их не спрашиваем — берём сохранённые из прошлых заказов в магазине
+  const savedContact = db.prepare('SELECT contact FROM user_settings WHERE chat_id = ?').get(ctx.chat.id)?.contact || null;
+  if (receipt.enabled() && !receipt.contactFrom(savedContact)) {
+    await ctx.scene.leave();
+    return ctx.reply(t(lang, 'needContact'));
+  }
 
   const address = ctx.wizard.state.address;
   const promoCode = ctx.wizard.state.promoCode || null;
@@ -229,18 +236,15 @@ checkoutScene.action('pay_yookassa', async (ctx) => {
     promoCode,
     discountPercent,
     deliveryCity,
-    q.delivery
+    q.delivery,
+    deliveryCity ? 'city' : 'pickup',
+    savedContact
   );
   // промокод засчитываем, когда придёт оплата (orders.markPaid)
   await ctx.scene.leave();
 
   try {
-    const payment = await createPayment(orderId, finalTotal / 100, `Заказ #${orderId}`);
-    db.prepare('UPDATE orders SET status = ?, payment_id = ? WHERE id = ?').run(
-      `awaiting_payment:${payment.id}`,
-      payment.id,
-      orderId
-    );
+    const payment = await startPayment(orderId);
     db.prepare('DELETE FROM cart_items WHERE chat_id = ?').run(ctx.chat.id); // корзина превратилась в заказ
     const orderCode = db.prepare('SELECT order_code FROM orders WHERE id = ?').get(orderId)?.order_code;
     await ctx.reply(
@@ -251,6 +255,7 @@ checkoutScene.action('pay_yookassa', async (ctx) => {
     );
   } catch (err) {
     console.error('Ошибка создания платежа ЮKassa:', err.response?.data || err.message);
+    db.prepare("UPDATE orders SET status = 'cancelled' WHERE id = ? AND payment_id IS NULL").run(orderId); // оплата не создалась — заказ не висит
     await ctx.reply(t(lang, 'paymentError'));
   }
 });
@@ -264,15 +269,18 @@ function createPendingOrder(
   promoCode = null,
   discountPercent = 0,
   deliveryCity = null,
-  deliveryCost = 0
+  deliveryCost = 0,
+  deliveryMethod = null,
+  contact = null,
+  extra = {}
 ) {
-  const { items } = getCart(chatId);
+  const items = extra.items || getCart(chatId).items; // extra.items — состав повторного заказа (подписка)
   const orderCode = db.generateOrderCode();
   const order = db
     .prepare(
-      'INSERT INTO orders (chat_id, status, total, address, payment_provider, promo_code, discount_percent, delivery_city, delivery_cost, order_code) VALUES (?,?,?,?,?,?,?,?,?,?)'
+      'INSERT INTO orders (chat_id, status, total, address, payment_provider, promo_code, discount_percent, delivery_city, delivery_cost, order_code, delivery_method, contact, carrier, addr_raw) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     )
-    .run(chatId, 'pending', total, address, provider, promoCode, discountPercent, deliveryCity, deliveryCost, orderCode);
+    .run(chatId, 'pending', total, address, provider, promoCode, discountPercent, deliveryCity, deliveryCost, orderCode, deliveryMethod || (deliveryCity ? 'city' : 'pickup'), contact, extra.carrier || null, extra.addrRaw || null);
   const orderId = order.lastInsertRowid;
   const insertItem = db.prepare(
     'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)'

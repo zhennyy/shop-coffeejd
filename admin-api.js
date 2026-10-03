@@ -100,8 +100,12 @@ module.exports = function adminApi(app, { bot, adm }) {
   });
 
   // ───────── ⚙️ Настройки: доставка ─────────
+  const deliveryX = require('./delivery');
   const settings = () => ({
     delivery: db.getDeliverySettings(),
+    delivery2: (() => { const d = deliveryX.get(); return { post: d.post, distance: { enabled: d.distance.enabled, originAddress: d.distance.origin.address, ready: d.distance.origin.lat != null,
+      tiers: d.distance.tiers.map((t) => `${t.km} : ${t.price / 100}`).join('\n') } }; })(),
+    receipts: require('./payments/receipt').enabled(),
     cities: db.prepare('SELECT id, city, city_en, price, active FROM delivery_rates ORDER BY active DESC, city').all(),
     promos: db.prepare('SELECT id, code, discount_percent, max_uses, used_count, active FROM promo_codes ORDER BY active DESC, id DESC').all(),
   });
@@ -117,6 +121,27 @@ module.exports = function adminApi(app, { bot, adm }) {
       pickup: Boolean(b.pickup),
       pickupAddress: String(b.pickupAddress || '').trim().slice(0, 200),
     });
+    return settings();
+  }));
+  // СДЭК / Почта и доставка по расстоянию
+  app.post('/shop-api/admin/delivery2', ...adm, wrap(async (req) => {
+    const b = req.body || {};
+    const cur = deliveryX.get();
+    const carriers = (Array.isArray(b.carriers) ? b.carriers : cur.post.carriers).slice(0, 6).map((c) => {
+      const price = toKop(c.price);
+      if (!(price >= 0)) throw new Error(`Цена «${c.name}» — числом`);
+      return { id: String(c.id || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 20) || 'c' + Math.random().toString(36).slice(2, 6), name: String(c.name || '').trim().slice(0, 40), price };
+    }).filter((c) => c.name);
+    const dist = { ...cur.distance, enabled: Boolean(b.distanceEnabled) };
+    if (b.tiers !== undefined) { dist.tiers = deliveryX.parseTiers(b.tiers); if (!dist.tiers.length) throw new Error('Добавьте хотя бы одну ступень расстояния'); }
+    const addr = String(b.originAddress || '').trim().slice(0, 200);
+    if (addr && addr !== cur.distance.origin.address) {
+      const pt = await deliveryX.geocode(addr).catch(() => null);
+      if (!pt) throw new Error('Не нашла этот адрес на карте. Напишите город, улицу и дом полностью');
+      dist.origin = { address: addr, lat: pt.lat, lon: pt.lon };
+    }
+    if (dist.enabled && dist.origin.lat == null) throw new Error('Для доставки по расстоянию укажите адрес, откуда вы отправляете');
+    deliveryX.save({ post: { enabled: Boolean(b.postEnabled), carriers }, distance: dist });
     return settings();
   }));
   app.post('/shop-api/admin/cities', ...adm, wrap((req) => {

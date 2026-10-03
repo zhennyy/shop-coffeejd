@@ -816,6 +816,12 @@ startWebhookServer(bot, {
 
 // проверка низкого остатка раз в час
 setInterval(() => checkLowStock(bot), 1000 * 60 * 60);
+// повторные заказы по подпискам: проверяем каждый час, но не раньше 9:00 по Москве (чтобы не писать ночью)
+setInterval(() => {
+  const subs = require('./subscriptions');
+  if (new Date(Date.now() + 3 * 3600e3).getUTCHours() < 9) return;
+  subs.runDue(bot).catch((e) => console.error('Подписки:', e.message));
+}, 1000 * 60 * 60);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));

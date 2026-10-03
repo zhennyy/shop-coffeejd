@@ -111,7 +111,8 @@ const STRINGS = {
     checkoutCancelled: 'Оформление отменено.',
     payLinkText: (code) => `Ссылка для оплаты заказа ${code}:`,
     payUrlButton: 'Оплатить',
-    paymentError: 'Не удалось создать платёж. Проверьте настройки ЮKassa в .env и попробуйте снова.',
+    paymentError: 'Не получилось создать оплату. Попробуйте ещё раз через минуту.',
+    needContact: 'Для чека нужен ваш телефон или e-mail. Откройте магазин из меню бота и оформите заказ там: он спросит контакт один раз и запомнит.',
 
     // === уведомления оплаты / доставки (payment & shipping notifications) ===
     paymentReceived: (name, id) => `${name ? name + ', ' : ''}оплата получена! Заказ #${id} принят в работу. ✅`,
@@ -232,7 +233,8 @@ const STRINGS = {
     checkoutCancelled: 'Checkout cancelled.',
     payLinkText: (code) => `Payment link for order ${code}:`,
     payUrlButton: 'Pay',
-    paymentError: 'Could not create a payment. Check the ЮKassa settings in .env and try again.',
+    paymentError: 'Could not create the payment. Please try again in a minute.',
+    needContact: 'We need your phone or e-mail for the receipt. Please open the shop from the bot menu and place the order there: it asks once and remembers.',
 
     // === payment & shipping notifications ===
     paymentReceived: (name, id) => `${name ? name + ', y' : 'Y'}our payment has been received! Order #${id} is now being processed. ✅`,
