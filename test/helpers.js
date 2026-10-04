@@ -8,8 +8,8 @@ process.env.BOT_TOKEN = '123456:TESTTOKEN';
 process.env.OWNER_CHAT_ID = '1001';
 process.env.CRM_SECRET = 'crm-secret-test';
 process.env.YOOKASSA_SHOP_ID = 'shop'; process.env.YOOKASSA_SECRET_KEY = 'key';
-process.env.BOT_USERNAME = 'zerno_test_bot';
-process.env.DB_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'zerno-')), 'test.db');
+process.env.BOT_USERNAME = 'coffeejd_test_bot';
+process.env.DB_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'coffeejd-')), 'test.db');
 process.env.WEBHOOK_PORT = String(30000 + Math.floor(Math.random() * 20000));
 
 // ---- подставная ЮKassa: запоминаем платежи, чтобы проверять чеки и суммы ----

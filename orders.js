@@ -74,7 +74,7 @@ function buyerText(o, lang = 'ru') {
     shipped: isPickup(o)
       ? (en ? `Order <b>№ ${o.code}</b> is ready for pickup 🏠` : `Заказ <b>№ ${o.code}</b> готов — можно забирать 🏠`)
       : (en ? `Order <b>№ ${o.code}</b> is on its way 🚚` : `Заказ <b>№ ${o.code}</b> отправлен 🚚`),
-    delivered: en ? `Order <b>№ ${o.code}</b> delivered ✅\nThank you for choosing Zerno! How did we do?` : `Заказ <b>№ ${o.code}</b> доставлен ✅\nСпасибо, что выбрали Zerno! Оцените, пожалуйста, как всё прошло:`,
+    delivered: en ? `Order <b>№ ${o.code}</b> delivered ✅\nThank you for choosing CoFFeeJD! How did we do?` : `Заказ <b>№ ${o.code}</b> доставлен ✅\nСпасибо, что выбрали CoFFeeJD! Оцените, пожалуйста, как всё прошло:`,
     cancelled: en ? `Order <b>№ ${o.code}</b> was cancelled.\nIf you already paid, the money will be returned to your card within a few days. Questions? Just write here 💬`
                   : `Заказ <b>№ ${o.code}</b> отменён.\nЕсли оплата уже прошла — деньги вернутся на карту в течение нескольких дней. Вопросы — просто напишите сюда 💬`,
   }[o.base] || `${en ? 'Order' : 'Заказ'} № ${o.code}: ${statusLabel(o, lang)}`;

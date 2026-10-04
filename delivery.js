@@ -26,7 +26,7 @@ let chain = Promise.resolve();
 async function nominatim(q) {
   const r = await axios.get('https://nominatim.openstreetmap.org/search', {
     params: { format: 'jsonv2', limit: 1, q, 'accept-language': 'ru' },
-    headers: { 'User-Agent': 'ZernoShopBot/1.0 (delivery distance)' }, timeout: 7000,
+    headers: { 'User-Agent': 'CoFFeeJDShopBot/1.0 (delivery distance)' }, timeout: 7000,
   });
   const x = r.data && r.data[0];
   return x ? { lat: parseFloat(x.lat), lon: parseFloat(x.lon) } : null;

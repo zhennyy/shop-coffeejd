@@ -81,9 +81,9 @@ function makeBackup({ uploadsDir, photosDir }) {
     { name: 'delivery_rates.json', data: JSON.stringify(delivery, null, 2) },
     { name: 'settings.json', data: JSON.stringify(db.prepare('SELECT * FROM settings').all(), null, 2) },
     { name: 'messages.json', data: JSON.stringify(db.prepare('SELECT * FROM messages ORDER BY id').all(), null, 2) },
-    { name: 'README.txt', data: `Резервная копия Zerno от ${stamp.replace('_', ' ')} (МСК).\n\ncatalog.csv и orders.csv открываются в Excel/Numbers.\nphotos/ — фото товаров (номер в начале — id товара).\n\nВ архиве есть адреса покупателей — храните его у себя и не выкладывайте на GitHub.\n` },
+    { name: 'README.txt', data: `Резервная копия CoFFeeJD от ${stamp.replace('_', ' ')} (МСК).\n\ncatalog.csv и orders.csv открываются в Excel/Numbers.\nphotos/ — фото товаров (номер в начале — id товара).\n\nВ архиве есть адреса покупателей — храните его у себя и не выкладывайте на GitHub.\n` },
   );
-  return { buffer: zip(files), filename: `zerno-backup-${stamp}.zip`, photos: files.filter((f) => f.name.startsWith('photos/')).length };
+  return { buffer: zip(files), filename: `coffeejd-backup-${stamp}.zip`, photos: files.filter((f) => f.name.startsWith('photos/')).length };
 }
 
 module.exports = { makeBackup, zip };

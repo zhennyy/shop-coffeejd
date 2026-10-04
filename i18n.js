@@ -7,7 +7,7 @@
 
 const STRINGS = {
   ru: {
-    welcome: 'Добро пожаловать в магазин Zerno ☕\nВыберите раздел:',
+    welcome: 'Добро пожаловать в магазин CoFFeeJD ☕\nВыберите раздел:',
     menuPrompt: 'Меню 👇',
 
     btnCatalog: '📦 Каталог',
@@ -30,9 +30,9 @@ const STRINGS = {
     noMoreStock: 'Больше нет в наличии',
     cartChanged: 'Корзина изменилась, пока вы оформляли заказ. Проверьте её и нажмите «Оформить» ещё раз 🙏',
     openShopText: 'Весь каталог — в нашей витрине 👇',
-    welcomeBackShop: (name) => `С возвращением, ${name}! ☕\nЭто Zerno — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
-    nameSavedShop: (name) => `Приятно познакомиться, ${name}! 👋\nЭто Zerno — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
-    welcomeShop: 'Добро пожаловать в Zerno ☕',
+    welcomeBackShop: (name) => `С возвращением, ${name}! ☕\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
+    nameSavedShop: (name) => `Приятно познакомиться, ${name}! 👋\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
+    welcomeShop: 'Добро пожаловать в CoFFeeJD ☕',
     myOrdersBtn: '📦 Мои заказы',
     aiPickBtn: '✨ AI-подбор',
     shopMoved: 'Каталог, корзина, заказы и AI-подбор теперь в магазине ☕',
@@ -129,7 +129,7 @@ const STRINGS = {
   },
 
   en: {
-    welcome: 'Welcome to the Zerno shop ☕\nChoose a section:',
+    welcome: 'Welcome to the CoFFeeJD shop ☕\nChoose a section:',
     menuPrompt: 'Menu 👇',
 
     btnCatalog: '📦 Catalog',
@@ -152,9 +152,9 @@ const STRINGS = {
     noMoreStock: 'No more in stock',
     cartChanged: 'Your cart changed while you were checking out. Please review it and tap «Checkout» again 🙏',
     openShopText: 'The whole catalog is in our shop 👇',
-    welcomeBackShop: (name) => `Welcome back, ${name}! ☕\nThis is Zerno — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
-    nameSavedShop: (name) => `Nice to meet you, ${name}! 👋\nThis is Zerno — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
-    welcomeShop: 'Welcome to Zerno ☕',
+    welcomeBackShop: (name) => `Welcome back, ${name}! ☕\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
+    nameSavedShop: (name) => `Nice to meet you, ${name}! 👋\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
+    welcomeShop: 'Welcome to CoFFeeJD ☕',
     myOrdersBtn: '📦 My orders',
     aiPickBtn: '✨ AI pick',
     shopMoved: 'Catalog, cart, orders and AI pick are now in the shop ☕',

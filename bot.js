@@ -421,7 +421,7 @@ async function getAiRecommendation(userQuery, lang) {
     lang === 'en' ? 'Answer in English, friendly and to the point, no markdown formatting.' : 'Отвечай по-русски, дружелюбно и по делу, без markdown-разметки.';
 
   const systemPrompt =
-    'Ты — консультант интернет-магазина свежеобжаренного кофе и чая Zerno. ' +
+    'Ты — консультант интернет-магазина свежеобжаренного кофе и чая CoFFeeJD. ' +
     'Ниже дан текущий каталог товаров в наличии. Подбери покупателю 1-3 подходящих товара ' +
     'по его описанию (площадь и тип помещения, тип отопления, бюджет, стиль и т.п.) и кратко объясни выбор. ' +
     `${replyLanguageInstruction} ` +

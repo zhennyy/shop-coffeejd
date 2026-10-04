@@ -12,7 +12,7 @@ async function push(orderId) {
     if (!o) return;
     const name = db.prepare('SELECT name FROM user_settings WHERE chat_id = ?').get(o.chat_id)?.name || '';
     const body = {
-      source: process.env.CRM_SOURCE || 'zerno',
+      source: process.env.CRM_SOURCE || 'coffeejd',
       customer: { external_id: String(o.chat_id), name },
       order: {
         id: String(o.id), code: o.code, status: o.base, total: o.total, delivery_cost: o.delivery_cost || 0,

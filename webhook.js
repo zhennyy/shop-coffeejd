@@ -45,7 +45,7 @@ async function localizePhoto(id, url) {
   await assertPublicUrl(url);
   const r = await require('axios').get(url, {
     responseType: 'arraybuffer', timeout: 20000, maxContentLength: 15 * 1024 * 1024, maxRedirects: 0,
-    headers: { 'User-Agent': 'Mozilla/5.0 (Zerno shop)', Accept: 'image/*' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (CoFFeeJD shop)', Accept: 'image/*' },
   });
   const type = String(r.headers['content-type'] || '');
   if (!type.startsWith('image/')) throw new Error('по ссылке не картинка (' + type + ')');
@@ -173,7 +173,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
         if (!/^https?:\/\//i.test(url)) url = await bot.telegram.getFileLink(url).then(String); // file_id из Telegram
         const r = await axios.get(url, {
           responseType: 'arraybuffer', timeout: 10000, maxContentLength: 10 * 1024 * 1024,
-          headers: { 'User-Agent': 'Mozilla/5.0 (Zerno shop)', Accept: 'image/*' },
+          headers: { 'User-Agent': 'Mozilla/5.0 (CoFFeeJD shop)', Accept: 'image/*' },
         });
         const type = String(r.headers['content-type'] || '');
         if (!type.startsWith('image/')) throw new Error('не картинка: ' + type);
@@ -641,7 +641,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
       if (payment.status !== 'succeeded') return res.sendStatus(200);
       // Платёж другого бота (тот же магазин ЮKassa, например «Флёр») — не наш, пропускаем
       const app = payment.metadata && payment.metadata.app;
-      if (app && app !== 'zernobot') return res.sendStatus(200);
+      if (app && app !== 'coffeejdbot') return res.sendStatus(200);
       // Деньги уже (частично) вернули — повтор уведомления заказ не «оживляет»
       if (parseFloat(payment.refunded_amount?.value || 0) > 0) return res.sendStatus(200);
 

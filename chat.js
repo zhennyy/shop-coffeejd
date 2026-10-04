@@ -12,7 +12,7 @@ const esc = orders.esc;
 // Владелица отвечает покупателю (из Telegram или из админки)
 async function sendToBuyer(bot, chatId, { text, photo }) {
   const lang = db.getLang(chatId);
-  const head = lang === 'en' ? '💬 <b>Zerno</b>' : '💬 <b>Магазин Zerno</b>';
+  const head = lang === 'en' ? '💬 <b>CoFFeeJD</b>' : '💬 <b>Магазин CoFFeeJD</b>';
   const url = orders.shopUrl();
   const reply_markup = url ? { inline_keyboard: [[{ text: lang === 'en' ? '🛍 Open the shop' : '🛍 Открыть магазин', web_app: { url } }]] } : undefined;
   if (photo) {
