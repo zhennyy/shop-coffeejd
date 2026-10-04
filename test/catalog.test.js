@@ -170,3 +170,18 @@ test('на объём (мл) и пример «чай — 10 сортов» за
   assert.equal(inv.bundleOf(set.id).length, 3); assert.ok(set.stock > 0);
   assert.equal(inv.bundleOf(set.id).find((b) => b.name === 'Те Гуань Инь').qty, 100);
 });
+
+test('импорт из админки: пример чая и свой файл; покупатель не может', async () => {
+  const before = S.db.prepare('SELECT COUNT(*) n FROM products').get().n;
+  const bad = await S.call(U, 'POST', '/shop-api/admin/stock-import', { sample: 'tea' });
+  assert.equal(bad.status, 403);
+  const r = await S.call(OWN, 'POST', '/shop-api/admin/stock-import', { sample: 'tea' });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(r.body.text, /Добавлено: 19/);
+  assert.equal(S.db.prepare('SELECT COUNT(*) n FROM products').get().n, before + 19);
+  const csv = Buffer.from('название;вариант;категория;цена_руб;остаток\nИмпорт-тест;;Тест;100;5\n', 'utf8').toString('base64');
+  const c = await S.call(OWN, 'POST', '/shop-api/admin/stock-import', { name: 'x.csv', data: csv });
+  assert.equal(c.status, 200, JSON.stringify(c.body));
+  const wrong = await S.call(OWN, 'POST', '/shop-api/admin/stock-import', { name: 'x.exe', data: csv });
+  assert.equal(wrong.status, 400);
+});

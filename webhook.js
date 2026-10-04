@@ -94,7 +94,8 @@ if (fs.existsSync(photosDir) && PUBLIC_BASE) {
 function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   const app = express();
   app.set('trust proxy', true); // за прокси Railway — иначе req.protocol всегда 'http'
-  app.use(express.json());
+  const jsonSmall = express.json();
+  app.use((req, res, next) => (req.path === '/shop-api/admin/stock-import' ? next() : jsonSmall(req, res, next)));
   app.use('/uploads', express.static(uploadsDir)); // без авторизации — Telegram должен уметь их скачать
   app.use('/photos', express.static(photosDir, { maxAge: '7d' })); // фото из папки проекта
 
@@ -367,6 +368,27 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
 
   // Изменение остатков по названию товара: {changes:[{name, delta}]}, delta<0 — списать, >0 — вернуть.
   // Всё или ничего: если хоть одной позиции не хватает, ничего не меняем. Наборы меняются через состав.
+  // Загрузка склада/каталога из Excel или CSV прямо из админки (или готовый пример чая)
+  app.post('/shop-api/admin/stock-import', express.json({ limit: '8mb' }), ...admP, async (req, res) => {
+    try {
+      const { importCsv, importXlsx, reportText } = require('./stock');
+      const body = req.body || {};
+      let r;
+      if (body.sample === 'tea') {
+        r = await importXlsx(fs.readFileSync(path.join(__dirname, 'примеры', 'чай-10-сортов.xlsx')));
+      } else {
+        const name = String(body.name || ''), b64 = String(body.data || '');
+        if (!b64) return res.status(400).json({ error: 'Файл не получен' });
+        const buf = Buffer.from(b64, 'base64');
+        if (buf.length > 5e6) return res.status(400).json({ error: 'Файл слишком большой (до 5 МБ)' });
+        if (/\.xlsx$/i.test(name)) r = await importXlsx(buf);
+        else if (/\.csv$/i.test(name)) r = importCsv(buf.toString('utf8'));
+        else return res.status(400).json({ error: 'Нужен файл .xlsx или .csv' });
+      }
+      res.json({ ok: true, text: reportText(r) });
+    } catch (e) { sendAdmErr(res, e); }
+  });
+
   app.post('/shop-api/admin/stock-delta', ...admP, (req, res) => {
     const list = Array.isArray(req.body.changes) ? req.body.changes.slice(0, 100) : [];
     const find = db.prepare('SELECT id, name, stock FROM products WHERE name = ?');

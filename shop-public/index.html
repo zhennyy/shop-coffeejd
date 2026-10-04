@@ -796,7 +796,7 @@ async function loadAdmin() {
 /* — товары — */
 function renderAdmProducts() {
   const noPhoto = admProducts.filter(p => !p.has_photo).length;
-  $('admBody').innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" data-edit="new" style="flex:2">＋ Новый товар</button><button class="btn ghost" data-backup style="flex:1">📦 Копия</button><button class="btn ghost" data-report style="flex:1">📊 Отчёт</button></div>` +
+  $('admBody').innerHTML = `<div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn" data-edit="new" style="flex:2">＋ Новый товар</button><button class="btn ghost" data-backup style="flex:1">📦 Копия</button><button class="btn ghost" data-report style="flex:1">📊 Отчёт</button></div><div style="display:flex;gap:8px;margin-bottom:12px"><button class="btn ghost" data-impfile style="flex:1">📥 Загрузить Excel / CSV</button><button class="btn ghost" data-impsample style="flex:1">🍵 Пример: 10 сортов чая</button></div><input type="file" id="impInput" accept=".xlsx,.csv" style="display:none">` +
     (noPhoto ? `<div class="note" style="margin:0 0 10px">Без фото: ${noPhoto} — нажмите на товар и «📷 Фото»</div>` : '') +
     admProducts.map(p => `
     <div class="aline" data-edit="${p.id}">
@@ -1119,7 +1119,7 @@ async function reloadAll() {
   if (tab === 'admin' && admMode === 'products') renderAdmProducts();
 }
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-d2save],[data-report],[data-bdadd],[data-bddel],[data-padd],[data-ptoggle],[data-pdel],.bar');
+  const t = e.target.closest('[data-adm],[data-edit],[data-save],[data-del],[data-photo],[data-ost],[data-purl],[data-backup],[data-of],[data-days],[data-chat],[data-chatwith],[data-gotoorder],[data-gotoprod],[data-track],[data-cadd],[data-cdel],[data-dsave],[data-d2save],[data-report],[data-impfile],[data-impsample],[data-bdadd],[data-bddel],[data-padd],[data-ptoggle],[data-pdel],.bar');
   if (!t) return;
   const d = t.dataset;
   if (t.classList.contains('bar')) toast(d.tip);
@@ -1151,6 +1151,14 @@ document.addEventListener('click', async e => {
   else if (d.gotoprod) { admMode = 'products'; await loadAdmin(); openEditor(+d.gotoprod); }
   else if (d.cadd !== undefined) settingsCall('/admin/cities', { city: $('ncity').value, price: $('nprice').value }, 'Город добавлен ✓');
   else if (d.cdel) { if (await ask('Удалить город из списка доставки?')) settingsCall(`/admin/cities/${d.cdel}/delete`, {}, 'Удалено'); }
+  else if (d.impfile !== undefined) { const inp = $('impInput'); if (inp) inp.click(); }
+  else if (d.impsample !== undefined) {
+    ask('Добавить в каталог 10 сортов чая и 2 набора (пример)?').then(yes => {
+      if (!yes) return;
+      toast('Загружаю…');
+      api('/admin/stock-import', { sample: 'tea' }, 1).then(async r => { toast(r.text.split('\n').slice(0, 2).join(' · ')); await reloadAll(); }).catch(err => toast(err.message));
+    });
+  }
   else if (d.report !== undefined) api('/admin/report', { days: 30, file: true }, 1).then(() => toast('Отчёт за 30 дней отправлен в чат 📊')).catch(err => toast(err.message));
   else if (d.bdadd !== undefined) { const first = admProducts.find(x => !x.is_bundle && !x.is_addon && x.id != editId); if (first) { edBundle.push({ product_id: first.id, qty: 1 }); renderBundleBox(); } }
   else if (d.bddel !== undefined) { edBundle.splice(+d.bddel, 1); renderBundleBox(); }
@@ -1378,6 +1386,20 @@ async function load() {
 }
 applyLang();
 load();
+
+document.addEventListener('change', (e) => {
+  if (!e.target || e.target.id !== 'impInput') return;
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  if (f.size > 5e6) { toast('Файл слишком большой (до 5 МБ)'); e.target.value = ''; return; }
+  const rd = new FileReader();
+  rd.onload = () => {
+    const b64 = String(rd.result).split(',')[1] || '';
+    toast('Загружаю…');
+    api('/admin/stock-import', { name: f.name, data: b64 }, 1).then(async r => { toast(r.text.split('\n').slice(0, 2).join(' · ')); await reloadAll(); }).catch(err => toast(err.message));
+    e.target.value = '';
+  };
+  rd.readAsDataURL(f);
+});
 </script>
 </body>
 </html>
