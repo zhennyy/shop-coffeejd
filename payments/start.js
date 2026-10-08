@@ -13,7 +13,7 @@ async function startPayment(orderId) {
       .map((i) => require('../qty').asUnit({ name: i.name || 'Товар', unit: i.unit }, i.quantity, i.price));
     rc = receipt.buildReceipt({ items, goodsTotal: o.total - (o.delivery_cost || 0), delivery: o.delivery_cost || 0, contact: receipt.contactFrom(o.contact) });
   }
-  const payment = await createPayment(orderId, o.total / 100, `Заказ #${code}`, rc);
+  const payment = await createPayment(orderId, o.total / 100, `Заказ #${code} в CoFFeeJD`, rc);
   db.prepare('UPDATE orders SET status = ?, payment_id = ? WHERE id = ?').run(`awaiting_payment:${payment.id}`, payment.id, orderId);
   return payment;
 }
