@@ -31,9 +31,12 @@ async function nominatim(q) {
   const x = r.data && r.data[0];
   return x ? { lat: parseFloat(x.lat), lon: parseFloat(x.lon) } : null;
 }
+let pending = 0;
 function geocode(q) {
   const key = String(q).trim().toLowerCase();
   if (cache.has(key)) return Promise.resolve(cache.get(key));
+  if (pending >= 15) return Promise.reject(new Error('Сервис адресов перегружен — попробуйте через минуту')); // очередь не растёт бесконечно
+  pending++;
   const run = chain.then(async () => {
     const pt = await (geocoder || nominatim)(q);
     if (pt && Number.isFinite(pt.lat) && Number.isFinite(pt.lon)) {
@@ -44,6 +47,7 @@ function geocode(q) {
     return null;
   });
   // не больше одного запроса в секунду (правила Nominatim); ошибка не ломает очередь
+  run.finally(() => { pending--; }).catch(() => {});
   chain = run.catch(() => {}).then(() => new Promise((r) => setTimeout(r, geocoder ? 0 : 1100)));
   return run;
 }
