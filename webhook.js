@@ -702,7 +702,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
 
   const port = process.env.WEBHOOK_PORT || 3001;
   app.listen(port, process.env.HOST || '127.0.0.1', () =>
-    console.log(`Вебхук ЮKassa и веб-админка слушают порт ${port} (/admin)`)
+    console.log(`Вебхук ЮKassa и магазин слушают порт ${port}`)
   );
 }
 

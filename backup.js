@@ -46,7 +46,7 @@ const csv = (rows) => {
   const cols = Object.keys(rows[0]);
   const cell = (v) => {
     let s = v == null ? '' : String(v);
-    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s; // защита от формул в Excel
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s) && !/^[+\-]?[\d\s().-]+$/.test(s)) s = "'" + s; // защита от формул в Excel (телефоны не трогаем)
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   // «;» и BOM — чтобы Excel на Mac/Windows сразу открыл кириллицу по столбцам
@@ -75,7 +75,7 @@ function makeBackup({ uploadsDir, photosDir }) {
   const stamp = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
   files.push(
     { name: 'catalog.json', data: JSON.stringify(products, null, 2) },
-    { name: 'catalog.csv', data: csv(products.map((p) => ({ id: p.id, name: p.name, category: p.category, price_rub: p.price / 100, stock: p.stock, description: p.description }))) },
+    { name: 'catalog.csv', data: csv(products.map((p) => ({ id: p.id, name: p.name, category: p.category, price_rub: p.unit ? `${(p.price * 100) / 100} за 100 ${p.unit === 'ml' ? 'мл' : 'г'}` : p.price / 100, stock: p.stock, description: p.description }))) },
     { name: 'orders.json', data: JSON.stringify({ orders, items }, null, 2) },
     { name: 'orders.csv', data: csv(orders.map((o) => ({ id: o.id, code: o.order_code, created_at: o.created_at, status: String(o.status || '').split(':')[0], total_rub: o.total / 100, delivery_rub: (o.delivery_cost || 0) / 100, address: o.address, promo: o.promo_code, track: o.track, rating: o.rating }))) },
     { name: 'promo_codes.json', data: JSON.stringify(promos, null, 2) },

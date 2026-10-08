@@ -431,11 +431,11 @@ function aiQuota(userId) {
 async function getAiRecommendation(userQuery, lang, userId = 'chat') {
   aiQuota(userId);
   const products = db
-    .prepare('SELECT id, name, description, price, category, stock FROM products WHERE stock > 0 AND is_addon = 0')
+    .prepare('SELECT id, name, description, price, category, stock, unit FROM products WHERE stock > 0 AND is_addon = 0' + (process.env.SHOP_URL ? '' : ' AND unit IS NULL'))
     .all();
 
   const catalogText = products
-    .map((p) => `#${p.id} ${p.name} (${p.category}) — ${formatPrice(p.price)}. ${p.description || ''}`)
+    .map((p) => `#${p.id} ${p.name} (${p.category}) — ${p.unit ? `${formatPrice(p.price * 100)} / 100 ${require('./qty').unitLabel(p)}` : formatPrice(p.price)}. ${p.description || ''}`)
     .join('\n');
 
   const replyLanguageInstruction =

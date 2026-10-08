@@ -48,12 +48,12 @@ const STRINGS = {
     searchNoResults: (term) => `Ничего не найдено по запросу «${term}».`,
 
     aiPickPrompt:
-      'Опишите, что вам нужно: площадь и тип помещения, тип отопления, бюджет, желаемый стиль — и я подберу подходящие товары из каталога 🤖',
+      'Опишите, что вам хочется: кофе или чай, способ заваривания (турка, эспрессо, фильтр), любимые вкусы, бюджет — и я подберу подходящее из каталога 🤖',
     aiThinking: '🤖 Подбираю варианты...',
     aiNoRecommendation: 'Не удалось сформировать рекомендацию.',
     aiError: 'Не удалось получить рекомендацию от AI-консультанта. Попробуйте ещё раз чуть позже.',
     aiHere: 'Вот что подходит по вашему запросу:',
-    aiNoMatch: 'Не получилось подобрать точный вариант — уточните запрос (площадь, тип отопления, бюджет).',
+    aiNoMatch: 'Не получилось подобрать точный вариант — уточните запрос (способ заваривания, вкус, бюджет).',
 
     cartEmpty: 'Корзина пуста.',
     cartTitle: 'Ваша корзина:\n\n',
@@ -170,12 +170,12 @@ const STRINGS = {
     searchNoResults: (term) => `Nothing found for "${term}".`,
 
     aiPickPrompt:
-      "Describe what you need: room size and type, heating type, budget, preferred style — and I'll pick matching products from the catalog 🤖",
+      "Describe what you'd like: coffee or tea, brewing method (cezve, espresso, filter), favourite flavours, budget — and I'll pick something from the catalog 🤖",
     aiThinking: '🤖 Picking options...',
     aiNoRecommendation: 'Could not put together a recommendation.',
     aiError: 'Could not get a recommendation from the AI consultant. Please try again in a bit.',
     aiHere: 'Here is what matches your request:',
-    aiNoMatch: 'Could not find an exact match — please clarify your request (room size, heating type, budget).',
+    aiNoMatch: 'Could not find an exact match — please clarify your request (brewing method, flavour, budget).',
 
     cartEmpty: 'Your cart is empty.',
     cartTitle: 'Your cart:\n\n',

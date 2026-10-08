@@ -156,7 +156,7 @@ function takeStock(o) {
     if (need <= 0) continue;
     const take = inv.take(i.product_id, need, 'продажа', o.id);
     db.prepare('UPDATE order_items SET stock_taken = stock_taken + ? WHERE rowid = ?').run(take, i.rid);
-    if (take < need) short.push(`${i.name || 'товар'} — не хватило ${need - take} шт.`);
+    if (take < need) short.push(`${i.name || 'товар'} — не хватило ${need - take} ${i.unit ? require('./qty').unitLabel(i) : 'шт.'}`);
   }
   return short;
 }
