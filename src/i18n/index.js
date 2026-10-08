@@ -1,4 +1,4 @@
-// i18n.js — двуязычные тексты бота для покупателя (RU/EN)
+// Двуязычные тексты бота для покупателя (RU/EN)
 // bilingual buyer-facing bot strings (RU/EN)
 //
 // Владельческие команды (/orders, /addproduct и т.п.) остаются на русском —
@@ -19,14 +19,14 @@ const STRINGS = {
     btnLanguage: '🌐 Язык / Language',
 
     noProducts: 'Товаров не найдено.',
-    inStock: (n) => `📦 В наличии: ${n} шт.`,
+    inStock: (count) => `📦 В наличии: ${count} шт.`,
     outOfStock: '⛔️ Нет в наличии',
     priceLabel: '💰 Цена:',
     addToCart: '➕ В корзину',
     addedToCart: 'Добавлено в корзину ✅',
-    inCartQty: (n) => `✅ В корзине: ${n} · ещё +1`,
+    inCartQty: (count) => `✅ В корзине: ${count} · ещё +1`,
     allCategories: 'Все',
-    cartShort: (n) => `🛒 Корзина · ${n}`,
+    cartShort: (count) => `🛒 Корзина · ${count}`,
     noMoreStock: 'Больше нет в наличии',
     cartChanged: 'Корзина изменилась, пока вы оформляли заказ. Проверьте её и нажмите «Оформить» ещё раз 🙏',
     openShopText: 'Весь каталог — в нашей витрине 👇',
@@ -62,9 +62,9 @@ const STRINGS = {
     removed: 'Удалено',
 
     ordersEmpty: 'У вас пока нет заказов.',
-    ordersTitle: (n) => `📋 <b>Ваши заказы</b> (последние ${n})`,
+    ordersTitle: (count) => `📋 <b>Ваши заказы</b> (последние ${count})`,
     orderNumber: (id) => `Заказ #${id}`,
-    promoLine: (code, pct) => `Промокод «${code}»: −${pct}%`,
+    promoLine: (code, percent) => `Промокод «${code}»: −${percent}%`,
     deliveryLine: (city, price) => `🚚 Доставка${city ? ` (${city})` : ''}: ${price}`,
     pickupLine: '🚚 Самовывоз',
     sumLabel: '💰 Сумма:',
@@ -141,14 +141,14 @@ const STRINGS = {
     btnLanguage: '🌐 Язык / Language',
 
     noProducts: 'No products found.',
-    inStock: (n) => `📦 In stock: ${n} pcs.`,
+    inStock: (count) => `📦 In stock: ${count} pcs.`,
     outOfStock: '⛔️ Out of stock',
     priceLabel: '💰 Price:',
     addToCart: '➕ Add to cart',
     addedToCart: 'Added to cart ✅',
-    inCartQty: (n) => `✅ In cart: ${n} · add +1`,
+    inCartQty: (count) => `✅ In cart: ${count} · add +1`,
     allCategories: 'All',
-    cartShort: (n) => `🛒 Cart · ${n}`,
+    cartShort: (count) => `🛒 Cart · ${count}`,
     noMoreStock: 'No more in stock',
     cartChanged: 'Your cart changed while you were checking out. Please review it and tap «Checkout» again 🙏',
     openShopText: 'The whole catalog is in our shop 👇',
@@ -184,9 +184,9 @@ const STRINGS = {
     removed: 'Removed',
 
     ordersEmpty: "You don't have any orders yet.",
-    ordersTitle: (n) => `📋 <b>Your orders</b> (last ${n})`,
+    ordersTitle: (count) => `📋 <b>Your orders</b> (last ${count})`,
     orderNumber: (id) => `Order #${id}`,
-    promoLine: (code, pct) => `Promo code "${code}": −${pct}%`,
+    promoLine: (code, percent) => `Promo code "${code}": −${percent}%`,
     deliveryLine: (city, price) => `🚚 Delivery${city ? ` (${city})` : ''}: ${price}`,
     pickupLine: '🚚 Pickup',
     sumLabel: '💰 Total:',
@@ -251,12 +251,13 @@ const STRINGS = {
   },
 };
 
-function t(lang, key, ...args) {
-  const dict = STRINGS[lang] || STRINGS.ru;
-  let entry = dict[key];
+// Текст по ключу на языке покупателя; если перевода нет — русский вариант
+function translate(language, key, ...textArguments) {
+  const languageStrings = STRINGS[language] || STRINGS.ru;
+  let entry = languageStrings[key];
   if (entry === undefined) entry = STRINGS.ru[key];
-  if (typeof entry === 'function') return entry(...args);
+  if (typeof entry === 'function') return entry(...textArguments);
   return entry;
 }
 
-module.exports = { t, STRINGS };
+module.exports = { translate, STRINGS };

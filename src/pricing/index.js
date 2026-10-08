@@ -1,40 +1,54 @@
-// pricing.js — единые правила цены для витрины и для оформления в чате:
+// Единые правила цены для витрины и для оформления в чате:
 // доставка по городу, «другие города», бесплатно от суммы, промокоды.
-// Сравниваем названия в JS: SQLite COLLATE NOCASE не понимает русские буквы («москва» ≠ «Москва»).
-const db = require('../database');
+// Названия сравниваем в JS: SQLite COLLATE NOCASE не понимает русские буквы («москва» ≠ «Москва»).
+const { database } = require('../database');
+const { getDeliverySettings } = require('../settings');
 
-const norm = (s) => String(s || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+const normalizeName = (text) => String(text || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+const normalizePromoCode = (code) => normalizeName(code).toUpperCase().replace(/\s+/g, '');
 
 // Тариф города из списка (или null, если такого города нет / он выключен)
-function findCity(city) {
-  const n = norm(city);
-  if (!n) return null;
-  return db.prepare('SELECT city, city_en, price FROM delivery_rates WHERE active = 1').all()
-    .find((r) => norm(r.city) === n || (r.city_en && norm(r.city_en) === n)) || null;
+async function findCity(cityName) {
+  const normalizedCity = normalizeName(cityName);
+  if (!normalizedCity) return null;
+  const activeRates = await database.deliveryRate.findMany({ where: { active: 1 }, select: { city: true, city_en: true, price: true } });
+  return activeRates.find((rate) => normalizeName(rate.city) === normalizedCity || (rate.city_en && normalizeName(rate.city_en) === normalizedCity)) || null;
 }
-const deliveryPrice = (city) => {
-  const r = findCity(city);
-  return r ? r.price : db.getDeliverySettings().otherPrice;
-};
+
+async function getDeliveryPrice(cityName) {
+  const cityRate = await findCity(cityName);
+  return cityRate ? cityRate.price : (await getDeliverySettings()).otherPrice;
+}
+
+const promoError = (message, kind) => Object.assign(new Error(message), { kind });
 
 // Промокод: возвращает { code, percent } или бросает понятную ошибку
-function findPromo(code) {
-  const n = norm(code).toUpperCase().replace(/\s+/g, '');
-  if (!n) return { code: null, percent: 0 };
-  const p = db.prepare('SELECT * FROM promo_codes WHERE active = 1').all()
-    .find((x) => norm(x.code).toUpperCase().replace(/\s+/g, '') === n);
-  if (!p) { const e = new Error('Такого промокода нет'); e.kind = 'notFound'; throw e; }
-  if (p.max_uses !== null && p.used_count >= p.max_uses) { const e = new Error('Промокод уже закончился'); e.kind = 'exhausted'; throw e; }
-  return { code: p.code, percent: p.discount_percent };
+async function findPromo(code) {
+  const normalizedCode = normalizePromoCode(code);
+  if (!normalizedCode) return { code: null, percent: 0 };
+  const activePromoCodes = await database.promoCode.findMany({ where: { active: 1 } });
+  const promoCode = activePromoCodes.find((candidate) => normalizePromoCode(candidate.code) === normalizedCode);
+  if (!promoCode) throw promoError('Такого промокода нет', 'notFound');
+  if (promoCode.max_uses !== null && promoCode.used_count >= promoCode.max_uses) throw promoError('Промокод уже закончился', 'exhausted');
+  return { code: promoCode.code, percent: promoCode.discount_percent };
 }
 
-// Итог: товары со скидкой + доставка (с учётом «бесплатно от»)
-function quote(goodsTotal, percent, city /* null = самовывоз */, fixedDelivery /* коп.: цена СДЭК/по расстоянию вместо городского тарифа */) {
-  const goods = percent > 0 ? Math.round((goodsTotal * (100 - percent)) / 100) : goodsTotal;
-  const ds = db.getDeliverySettings();
-  let delivery = city == null ? 0 : fixedDelivery != null ? fixedDelivery : deliveryPrice(city);
-  if (city != null && ds.freeFrom > 0 && goods >= ds.freeFrom) delivery = 0;
+// Итог: товары со скидкой + доставка (с учётом «бесплатно от»).
+// deliveryCity = null — самовывоз; fixedDeliveryPrice — цена СДЭК/по расстоянию вместо городского тарифа (коп.)
+async function quote(goodsTotal, discountPercent, deliveryCity, fixedDeliveryPrice) {
+  const goods = discountPercent > 0 ? Math.round((goodsTotal * (100 - discountPercent)) / 100) : goodsTotal;
+  const deliverySettings = await getDeliverySettings();
+  let delivery = 0;
+  if (deliveryCity != null) delivery = fixedDeliveryPrice != null ? fixedDeliveryPrice : await getDeliveryPrice(deliveryCity);
+  if (deliveryCity != null && deliverySettings.freeFrom > 0 && goods >= deliverySettings.freeFrom) delivery = 0;
   return { goods, delivery, total: goods + delivery };
 }
 
-module.exports = { norm, findCity, deliveryPrice, findPromo, quote };
+// Английское название города для истории заказов (orders.delivery_city хранит русский текст на момент заказа)
+async function translateCity(cityName, language) {
+  if (!cityName || language !== 'en') return cityName;
+  const cityRate = await database.deliveryRate.findFirst({ where: { city: cityName }, select: { city_en: true } });
+  return (cityRate && cityRate.city_en) || cityName;
+}
+
+module.exports = { normalizeName, findCity, getDeliveryPrice, findPromo, quote, translateCity };

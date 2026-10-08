@@ -1,36 +1,51 @@
-// crm.js — отправка заказов в CRM по webhook. Включается переменными CRM_URL и CRM_SECRET;
-// без них ничего не делает. Сбой CRM никогда не мешает магазину: ошибки только в лог.
+// Отправка заказов в CRM по webhook. Включается переменными CRM_URL и CRM_SECRET; без них ничего не делает.
+// Сбой CRM никогда не мешает магазину: ошибки только в лог.
 const axios = require('axios');
-const db = require('../database');
+const customers = require('../customers');
+const { asReceiptLine } = require('../inventory/quantity');
 
-async function push(orderId) {
-  const url = process.env.CRM_URL, secret = process.env.CRM_SECRET;
-  if (!url || !secret) return;
+const MAX_ATTEMPTS = 3;
+const RETRY_PAUSE_MS = 1500;
+
+async function sendOrderToCrm(orderId) {
+  const crmUrl = process.env.CRM_URL;
+  const crmSecret = process.env.CRM_SECRET;
+  if (!crmUrl || !crmSecret) return;
   try {
     const { getOrder } = require('../orders');
-    const o = getOrder(orderId);
-    if (!o) return;
-    const name = db.prepare('SELECT name FROM user_settings WHERE chat_id = ?').get(o.chat_id)?.name || '';
-    const body = {
+    const order = await getOrder(orderId);
+    if (!order) return;
+    const requestBody = {
       source: process.env.CRM_SOURCE || 'coffeejd',
-      customer: { external_id: String(o.chat_id), name },
+      customer: { external_id: String(order.chat_id), name: (await customers.getName(order.chat_id)) || '' },
       order: {
-        id: String(o.id), code: o.code, status: o.base, total: o.total, delivery_cost: o.delivery_cost || 0,
-        address: o.address || '', track: o.track || '',
-        items: o.items.map((i) => { const u = require('../inventory/quantity').asUnit({ name: i.name, unit: i.unit }, i.quantity, i.price); return { name: u.name, qty: u.quantity, price: u.price }; }),
+        id: String(order.id), code: order.code, status: order.base, total: order.total, delivery_cost: order.delivery_cost || 0,
+        address: order.address || '', track: order.track || '',
+        items: order.items.map((orderItem) => {
+          const receiptLine = asReceiptLine({ name: orderItem.name, unit: orderItem.unit }, orderItem.quantity, orderItem.price);
+          return { name: receiptLine.name, qty: receiptLine.quantity, price: receiptLine.price };
+        }),
       },
     };
-    for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        await axios.post(url, body, { headers: { 'X-Webhook-Secret': secret }, timeout: 8000 });
+        await axios.post(crmUrl, requestBody, { headers: { 'X-Webhook-Secret': crmSecret }, timeout: 8000 });
         return;
-      } catch (e) {
-        if (e.response && e.response.status < 500) { console.warn('CRM отклонила заказ', o.code, e.response.status, e.response.data?.error || ''); return; }
-        if (attempt === 3) console.warn('CRM недоступна, заказ', o.code, 'не отправлен:', e.message);
-        else await new Promise((r) => setTimeout(r, 1500 * attempt));
+      } catch (requestError) {
+        if (requestError.response && requestError.response.status < 500) {
+          console.warn('CRM отклонила заказ', order.code, requestError.response.status, requestError.response.data?.error || '');
+          return;
+        }
+        if (attempt === MAX_ATTEMPTS) console.warn('CRM недоступна, заказ', order.code, 'не отправлен:', requestError.message);
+        else await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt));
       }
     }
-  } catch (e) { console.warn('CRM:', e.message); }
+  } catch (crmError) {
+    console.warn('CRM:', crmError.message);
+  }
 }
 
-module.exports = { push: (id) => { push(id); } }; // не ждём ответа CRM
+// Не ждём ответа CRM: заказ оформляется дальше, отправка идёт в фоне
+const pushOrder = (orderId) => { sendOrderToCrm(orderId); };
+
+module.exports = { pushOrder };

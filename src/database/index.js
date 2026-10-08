@@ -1,389 +1,46 @@
-// db.js
-const Database = require('better-sqlite3');
-const dbPath = process.env.DB_PATH || 'shop.db';
-const db = new Database(dbPath);
+// Подключение к базе через Prisma.
+// database — клиент Prisma; внутри runInTransaction он сам переключается на текущую транзакцию,
+// поэтому функциям не нужно передавать транзакцию параметром.
+const path = require('node:path');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const { PrismaBetterSqlite3 } = require('@prisma/adapter-better-sqlite3');
+const { PrismaClient } = require('./generated');
+const { runMigrations } = require('./migrations');
 
-db.exec(`
-CREATE TABLE IF NOT EXISTS products (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  description TEXT,
-  price INTEGER NOT NULL, -- в копейках, чтобы не было проблем с float
-  photo_url TEXT,
-  stock INTEGER NOT NULL DEFAULT 0,
-  category TEXT,
-  name_en TEXT,        -- необязательный английский перевод названия
-  description_en TEXT, -- необязательный английский перевод описания
-  category_en TEXT     -- необязательный английский перевод категории
-);
+const databasePath = path.resolve(process.env.DB_PATH || 'shop.db');
 
-CREATE TABLE IF NOT EXISTS cart_items (
-  chat_id INTEGER NOT NULL,
-  product_id INTEGER NOT NULL,
-  quantity INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY (chat_id, product_id)
-);
+let prismaClient = null;
+const transactionStorage = new AsyncLocalStorage();
 
-CREATE TABLE IF NOT EXISTS orders (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id INTEGER NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending',
-  total INTEGER NOT NULL,
-  address TEXT,
-  payment_provider TEXT,
-  order_code TEXT, -- короткий код заказа (4 символа) для покупателя, вместо порядкового id
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS order_items (
-  order_id INTEGER NOT NULL,
-  product_id INTEGER NOT NULL,
-  quantity INTEGER NOT NULL,
-  price INTEGER NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS promo_codes (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  code TEXT NOT NULL UNIQUE,
-  discount_percent INTEGER NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1,
-  max_uses INTEGER, -- NULL = без ограничения
-  used_count INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS delivery_rates (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  city TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  city_en TEXT,
-  price INTEGER NOT NULL, -- в копейках
-  active INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- язык интерфейса покупателя (ru/en) — выбирается кнопкой "🌐 Язык / Language";
--- name — имя покупателя, один раз спрашиваем при первом /start
-CREATE TABLE IF NOT EXISTS user_settings (
-  chat_id INTEGER PRIMARY KEY,
-  lang TEXT NOT NULL DEFAULT 'ru',
-  name TEXT
-);
-`);
-
-// миграция: имя покупателя (могло отсутствовать в базе, созданной до этой функции)
-const userSettingsColumns = db.prepare('PRAGMA table_info(user_settings)').all().map((c) => c.name);
-if (!userSettingsColumns.includes('name')) {
-  db.exec('ALTER TABLE user_settings ADD COLUMN name TEXT');
+function connect() {
+  if (prismaClient) return prismaClient;
+  runMigrations(databasePath);
+  prismaClient = new PrismaClient({ adapter: new PrismaBetterSqlite3({ url: `file:${databasePath}` }) });
+  return prismaClient;
 }
 
-// получить язык покупателя (по умолчанию — русский)
-function getLang(chatId) {
-  const row = db.prepare('SELECT lang FROM user_settings WHERE chat_id = ?').get(chatId);
-  return row ? row.lang : 'ru';
+// Обращение database.order.findMany(...) идёт в активную транзакцию, если она есть, иначе — в общий клиент
+const database = new Proxy({}, {
+  get(_target, propertyName) {
+    const activeClient = transactionStorage.getStore() || connect();
+    const value = activeClient[propertyName];
+    return typeof value === 'function' ? value.bind(activeClient) : value;
+  },
+});
+
+// Всё внутри work выполняется одной транзакцией: либо целиком, либо никак.
+// Вложенный вызов просто продолжает внешнюю транзакцию.
+async function runInTransaction(work) {
+  if (transactionStorage.getStore()) return work();
+  return connect().$transaction((transactionClient) => transactionStorage.run(transactionClient, work), { timeout: 30000, maxWait: 30000 });
 }
 
-// сохранить выбор языка покупателя
-function setLang(chatId, lang) {
-  db.prepare(
-    `INSERT INTO user_settings (chat_id, lang) VALUES (?, ?)
-     ON CONFLICT(chat_id) DO UPDATE SET lang = excluded.lang`
-  ).run(chatId, lang);
+// Время в формате, в котором SQLite хранит даты в этой базе: «2026-10-08 19:30:00» (UTC)
+const toSqliteTimestamp = (date = new Date()) => new Date(date).toISOString().replace('T', ' ').slice(0, 19);
+
+async function disconnect() {
+  if (prismaClient) await prismaClient.$disconnect();
+  prismaClient = null;
 }
 
-// получить сохранённое имя покупателя (null, если ещё не указано)
-function getName(chatId) {
-  const row = db.prepare('SELECT name FROM user_settings WHERE chat_id = ?').get(chatId);
-  return row ? row.name : null;
-}
-
-// сохранить имя покупателя
-function setName(chatId, name) {
-  db.prepare(
-    `INSERT INTO user_settings (chat_id, name) VALUES (?, ?)
-     ON CONFLICT(chat_id) DO UPDATE SET name = excluded.name`
-  ).run(chatId, name);
-}
-
-// найти английское название города доставки по русскому (для истории заказов —
-// orders.delivery_city хранит текст на момент заказа, а не ссылку на delivery_rates)
-function getCityEn(city) {
-  if (!city) return null;
-  const row = db
-    .prepare('SELECT city_en FROM delivery_rates WHERE city = ? COLLATE NOCASE')
-    .get(city);
-  return row ? row.city_en : null;
-}
-
-// перевести название города для отображения покупателю/в админке (с фоллбеком на русское)
-function translateCity(city, lang) {
-  if (!city) return city;
-  if (lang !== 'en') return city;
-  return getCityEn(city) || city;
-}
-
-// миграция: добавляем колонки промокода к уже существующей таблице orders
-// (на проде в базе уже есть заказы, поэтому CREATE TABLE их не тронет)
-const orderColumns = db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name);
-if (!orderColumns.includes('promo_code')) {
-  db.exec('ALTER TABLE orders ADD COLUMN promo_code TEXT');
-}
-if (!orderColumns.includes('discount_percent')) {
-  db.exec('ALTER TABLE orders ADD COLUMN discount_percent INTEGER NOT NULL DEFAULT 0');
-}
-if (!orderColumns.includes('delivery_city')) {
-  db.exec('ALTER TABLE orders ADD COLUMN delivery_city TEXT');
-}
-if (!orderColumns.includes('delivery_cost')) {
-  db.exec('ALTER TABLE orders ADD COLUMN delivery_cost INTEGER NOT NULL DEFAULT 0');
-}
-if (!orderColumns.includes('order_code')) {
-  db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
-}
-
-// короткий код заказа для покупателя (4 символа, без похожих друг на друга: 0/O, 1/I исключены)
-const ORDER_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-function generateOrderCode() {
-  let code;
-  const exists = db.prepare('SELECT 1 FROM orders WHERE order_code = ?');
-  do {
-    code = Array.from({ length: 4 }, () => ORDER_CODE_CHARS[Math.floor(Math.random() * ORDER_CODE_CHARS.length)]).join('');
-  } while (exists.get(code));
-  return code;
-}
-
-// одноразовый бэкфилл кодов для заказов, созданных до появления этой функции
-const ordersWithoutCode = db.prepare('SELECT id FROM orders WHERE order_code IS NULL').all();
-if (ordersWithoutCode.length) {
-  const setCode = db.prepare('UPDATE orders SET order_code = ? WHERE id = ?');
-  for (const o of ordersWithoutCode) {
-    setCode.run(generateOrderCode(), o.id);
-  }
-}
-
-// миграция: английские поля каталога (могли отсутствовать в базе, созданной до i18n)
-const productColumns = db.prepare('PRAGMA table_info(products)').all().map((c) => c.name);
-if (!productColumns.includes('name_en')) {
-  db.exec('ALTER TABLE products ADD COLUMN name_en TEXT');
-}
-if (!productColumns.includes('description_en')) {
-  db.exec('ALTER TABLE products ADD COLUMN description_en TEXT');
-}
-if (!productColumns.includes('category_en')) {
-  db.exec('ALTER TABLE products ADD COLUMN category_en TEXT');
-}
-// варианты товара: каждый вариант — отдельная строка-SKU со своей ценой и остатком,
-// строки одной группы (group_key) витрина показывает одной карточкой с выбором варианта
-if (!productColumns.includes('group_key')) db.exec('ALTER TABLE products ADD COLUMN group_key TEXT');
-if (!productColumns.includes('option_label')) db.exec('ALTER TABLE products ADD COLUMN option_label TEXT');
-if (!productColumns.includes('option_label_en')) db.exec('ALTER TABLE products ADD COLUMN option_label_en TEXT');
-
-// вторая опция (например, размер + цвет): option_label — первая, option2_label — вторая
-if (!productColumns.includes('option2_label')) db.exec('ALTER TABLE products ADD COLUMN option2_label TEXT');
-if (!productColumns.includes('option2_label_en')) db.exec('ALTER TABLE products ADD COLUMN option2_label_en TEXT');
-// допы: обычный товар со своей ценой и остатком (упаковка, помол), который витрина предлагает в карточке основного товара.
-// addon_for: '*' — ко всем, иначе названия основных товаров/групп через «|»
-if (!productColumns.includes('is_addon')) db.exec('ALTER TABLE products ADD COLUMN is_addon INTEGER NOT NULL DEFAULT 0');
-if (!productColumns.includes('addon_for')) db.exec('ALTER TABLE products ADD COLUMN addon_for TEXT');
-// наборы: набор — обычный товар, состав лежит здесь; остаток набора считается по составу, а при оплате списываются компоненты
-db.exec(`CREATE TABLE IF NOT EXISTS bundle_items (
-  bundle_id INTEGER NOT NULL, product_id INTEGER NOT NULL, qty INTEGER NOT NULL DEFAULT 1,
-  PRIMARY KEY (bundle_id, product_id)
-);
-CREATE TABLE IF NOT EXISTS stock_log (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL DEFAULT (datetime('now')),
-  product_id INTEGER NOT NULL, delta INTEGER NOT NULL, after INTEGER NOT NULL, reason TEXT NOT NULL, order_id INTEGER
-);
-CREATE INDEX IF NOT EXISTS idx_stock_log_ts ON stock_log(ts);`);
-
-// продажа на вес: unit='g' — количество в граммах, price — копеек за 1 г, step — шаг выбора, min_qty — минимум
-if (!productColumns.includes('unit')) db.exec('ALTER TABLE products ADD COLUMN unit TEXT');
-if (!productColumns.includes('step')) db.exec('ALTER TABLE products ADD COLUMN step INTEGER NOT NULL DEFAULT 1');
-if (!productColumns.includes('min_qty')) db.exec('ALTER TABLE products ADD COLUMN min_qty INTEGER NOT NULL DEFAULT 1');
-
-// одноразовый бэкфилл английских переводов для стартовых демо-товаров
-// (если они уже есть в базе без name_en — например, база создана до появления двуязычности)
-const seedTranslations = {};
-const backfillEn = db.prepare(
-  'UPDATE products SET name_en = ?, description_en = ?, category_en = ? WHERE name = ? AND name_en IS NULL'
-);
-for (const [ruName, tr] of Object.entries(seedTranslations)) {
-  backfillEn.run(tr.name_en, tr.description_en, tr.category_en, ruName);
-}
-
-// миграция: английское название города доставки (могло отсутствовать в базе, созданной до i18n)
-const deliveryColumns = db.prepare('PRAGMA table_info(delivery_rates)').all().map((c) => c.name);
-if (!deliveryColumns.includes('city_en')) {
-  db.exec('ALTER TABLE delivery_rates ADD COLUMN city_en TEXT');
-}
-
-// одноразовый бэкфилл английских названий для стартовых городов доставки
-const citySeedTranslations = {
-  'Санкт-Петербург': 'Saint Petersburg',
-  'Москва': 'Moscow',
-  'Великий Новгород': 'Veliky Novgorod',
-  'Псков': 'Pskov',
-  'Петрозаводск': 'Petrozavodsk',
-  'Вологда': 'Vologda',
-};
-const backfillCityEn = db.prepare(
-  'UPDATE delivery_rates SET city_en = ? WHERE city = ? COLLATE NOCASE AND city_en IS NULL'
-);
-for (const [ruCity, cityEn] of Object.entries(citySeedTranslations)) {
-  backfillCityEn.run(cityEn, ruCity);
-}
-
-// дефолтный тариф на доставку для городов, которых нет в списке delivery_rates
-const DEFAULT_DELIVERY_PRICE = 150000; // 1500 ₽
-
-// сидим стартовые тарифы, если таблица пуста
-const deliveryCount = db.prepare('SELECT COUNT(*) AS c FROM delivery_rates').get().c;
-if (deliveryCount === 0) {
-  const insertRate = db.prepare('INSERT INTO delivery_rates (city, city_en, price) VALUES (?,?,?)');
-  insertRate.run('Санкт-Петербург', 'Saint Petersburg', 40000); // 400 ₽ — свой город
-  insertRate.run('Москва', 'Moscow', 70000); // 700 ₽
-  insertRate.run('Великий Новгород', 'Veliky Novgorod', 70000);
-  insertRate.run('Псков', 'Pskov', 70000);
-  insertRate.run('Петрозаводск', 'Petrozavodsk', 70000);
-  insertRate.run('Вологда', 'Vologda', 70000);
-}
-
-// заказы: способ доставки, контакт для чека; подписки (повторные заказы); телефон/e-mail покупателя
-const oc2 = db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name);
-if (!oc2.includes('delivery_method')) db.exec('ALTER TABLE orders ADD COLUMN delivery_method TEXT');
-if (!oc2.includes('contact')) db.exec('ALTER TABLE orders ADD COLUMN contact TEXT');
-if (!oc2.includes('carrier')) db.exec('ALTER TABLE orders ADD COLUMN carrier TEXT');
-if (!oc2.includes('addr_raw')) db.exec('ALTER TABLE orders ADD COLUMN addr_raw TEXT');
-const uc2 = db.prepare('PRAGMA table_info(user_settings)').all().map((c) => c.name);
-if (!uc2.includes('contact')) db.exec('ALTER TABLE user_settings ADD COLUMN contact TEXT');
-db.exec(`
-CREATE TABLE IF NOT EXISTS subscriptions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id INTEGER NOT NULL,
-  items TEXT NOT NULL,              -- JSON [{product_id, quantity}]
-  interval_days INTEGER NOT NULL,
-  next_date TEXT NOT NULL,          -- YYYY-MM-DD
-  active INTEGER NOT NULL DEFAULT 1,
-  delivery_method TEXT,             -- pickup | city | post | distance
-  delivery_city TEXT,
-  carrier TEXT,
-  address TEXT,                     -- адрес без города
-  contact TEXT,
-  last_order_id INTEGER,
-  postponed INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS subscriptions_due ON subscriptions (active, next_date);
-`);
-
-// сидим тестовые товары, если каталог пуст
-const count = db.prepare('SELECT COUNT(*) AS c FROM products').get().c;
-if (count === 0) {
-  const insert = db.prepare(
-    'INSERT INTO products (name, description, price, photo_url, stock, category, name_en, description_en, category_en, group_key, option_label, option_label_en) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
-  );
-  // [название, описание, цена 250 г (коп.), цена 1 кг, остаток, категория, name_en, description_en, category_en]
-  const coffees = [
-    ['Эфиопия Иргачефф', 'Светлая обжарка: жасмин, бергамот, чёрный чай', 120000, 420000, 'Кофе', 'Ethiopia Yirgacheffe', 'Light roast: jasmine, bergamot, black tea'],
-    ['Колумбия Супремо', 'Средняя обжарка: шоколад, орех, карамель', 95000, 340000, 'Кофе', 'Colombia Supremo', 'Medium roast: chocolate, nuts, caramel'],
-    ['Бразилия Сантос', 'Тёмная обжарка для эспрессо: какао, пряности', 80000, 290000, 'Кофе', 'Brazil Santos', 'Dark espresso roast: cocoa, spices'],
-  ];
-  for (const [n, d, p250, p1000, c, ne, de] of coffees) {
-    insert.run(`${n} · 250 г`, d, p250, null, 40, c, `${ne} · 250 g`, de, 'Coffee', n, '250 г', '250 g');
-    insert.run(`${n} · 1 кг`, d, p1000, null, 15, c, `${ne} · 1 kg`, de, 'Coffee', n, '1 кг', '1 kg');
-  }
-  insert.run('Набор «Дегустация»', 'Три сорта по 100 г: светлая, средняя и тёмная обжарка', 190000, null, 25, 'Наборы', 'Tasting set', 'Three roasts, 100 g each: light, medium, dark', 'Sets', null, null, null);
-  insert.run('Улун Те Гуан Инь', 'Классический улун с цветочным ароматом. 100 г', 70000, null, 30, 'Чай', 'Tie Guan Yin oolong', 'Classic floral oolong. 100 g', 'Tea', null, null, null);
-}
-
-// ===== Настройки магазина (ключ → JSON), меняются в админке витрины =====
-db.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-function getSetting(key, fallback) {
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  if (!row) return fallback;
-  try { return JSON.parse(row.value); } catch { return fallback; }
-}
-function setSetting(key, value) {
-  db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?)
-              ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(key, JSON.stringify(value));
-}
-// Доставка: цена для городов не из списка, бесплатно от суммы, самовывоз
-const DELIVERY_DEFAULTS = { otherPrice: DEFAULT_DELIVERY_PRICE, freeFrom: 0, pickup: true, pickupAddress: '' };
-const getDeliverySettings = () => ({ ...DELIVERY_DEFAULTS, ...getSetting('delivery', {}) });
-
-// ===== Переписка покупатель ⇄ магазин (вкладка «Чаты» в админке) =====
-db.exec(`
-CREATE TABLE IF NOT EXISTS messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  chat_id INTEGER NOT NULL,          -- покупатель
-  from_owner INTEGER NOT NULL DEFAULT 0,
-  text TEXT,
-  photo TEXT,                        -- file_id фото в Telegram
-  owner_msg_id INTEGER,              -- id копии сообщения у владелицы (чтобы ответить реплаем)
-  is_read INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS messages_chat ON messages (chat_id, id);
-`);
-function addMessage({ chatId, fromOwner = false, text = null, photo = null, ownerMsgId = null }) {
-  return db.prepare(`INSERT INTO messages (chat_id, from_owner, text, photo, owner_msg_id, is_read)
-                     VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(chatId, fromOwner ? 1 : 0, text, photo, ownerMsgId, fromOwner ? 1 : 0).lastInsertRowid;
-}
-const setOwnerMsgId = (id, ownerMsgId) => db.prepare('UPDATE messages SET owner_msg_id = ? WHERE id = ?').run(ownerMsgId, id);
-const chatByOwnerMsg = (ownerMsgId) => db.prepare('SELECT chat_id FROM messages WHERE owner_msg_id = ?').get(ownerMsgId)?.chat_id || null;
-function getChats() {
-  return db.prepare(`
-    SELECT m.chat_id, MAX(m.id) AS last_id,
-           SUM(CASE WHEN m.is_read = 0 AND m.from_owner = 0 THEN 1 ELSE 0 END) AS unread
-    FROM messages m GROUP BY m.chat_id ORDER BY last_id DESC LIMIT 100`).all()
-    .map((c) => {
-      const last = db.prepare('SELECT text, photo, from_owner, created_at FROM messages WHERE id = ?').get(c.last_id);
-      return { chat_id: c.chat_id, name: getName(c.chat_id) || '', unread: c.unread, last };
-    });
-}
-const getChat = (chatId) => db.prepare('SELECT * FROM messages WHERE chat_id = ? ORDER BY id DESC LIMIT 200').all(chatId).reverse();
-const markChatRead = (chatId) => db.prepare('UPDATE messages SET is_read = 1 WHERE chat_id = ? AND from_owner = 0').run(chatId);
-const unreadTotal = () => db.prepare('SELECT COUNT(*) AS c FROM messages WHERE is_read = 0 AND from_owner = 0').get().c;
-
-// ===== Заказы: трек-номер, оценка, время смены статуса =====
-const oc = db.prepare('PRAGMA table_info(orders)').all().map((c) => c.name);
-if (!oc.includes('track')) db.exec('ALTER TABLE orders ADD COLUMN track TEXT');
-if (!oc.includes('rating')) db.exec('ALTER TABLE orders ADD COLUMN rating INTEGER');
-if (!oc.includes('status_at')) db.exec('ALTER TABLE orders ADD COLUMN status_at TEXT');
-if (!oc.includes('status_msg_id')) db.exec('ALTER TABLE orders ADD COLUMN status_msg_id INTEGER');
-// payment_id — платёж ЮKassa, который оплачивает именно этот заказ; paid_at — когда деньги пришли (один раз)
-if (!oc.includes('payment_id')) {
-  db.exec('ALTER TABLE orders ADD COLUMN payment_id TEXT');
-  db.exec("UPDATE orders SET payment_id = substr(status, 18) WHERE status LIKE 'awaiting_payment:%'");
-}
-if (!oc.includes('paid_at')) {
-  db.exec('ALTER TABLE orders ADD COLUMN paid_at TEXT');
-  db.exec("UPDATE orders SET paid_at = created_at WHERE status IN ('paid','assembling','shipped','delivered')");
-}
-// сколько штук реально списали со склада по позиции — столько и вернём при отмене
-const ic = db.prepare('PRAGMA table_info(order_items)').all().map((c) => c.name);
-if (!ic.includes('stock_taken')) {
-  db.exec('ALTER TABLE order_items ADD COLUMN stock_taken INTEGER NOT NULL DEFAULT 0');
-  db.exec(`UPDATE order_items SET stock_taken = quantity WHERE order_id IN
-           (SELECT id FROM orders WHERE status IN ('paid','assembling','shipped','delivered'))`);
-}
-
-module.exports = db;
-Object.defineProperty(module.exports, 'DEFAULT_DELIVERY_PRICE', { get: () => getDeliverySettings().otherPrice, enumerable: true });
-module.exports.getSetting = getSetting;
-module.exports.setSetting = setSetting;
-module.exports.getDeliverySettings = getDeliverySettings;
-module.exports.addMessage = addMessage;
-module.exports.setOwnerMsgId = setOwnerMsgId;
-module.exports.chatByOwnerMsg = chatByOwnerMsg;
-module.exports.getChats = getChats;
-module.exports.getChat = getChat;
-module.exports.markChatRead = markChatRead;
-module.exports.unreadTotal = unreadTotal;
-module.exports.getLang = getLang;
-module.exports.setLang = setLang;
-module.exports.getName = getName;
-module.exports.setName = setName;
-module.exports.getCityEn = getCityEn;
-module.exports.translateCity = translateCity;
-module.exports.generateOrderCode = generateOrderCode;
+module.exports = { database, runInTransaction, toSqliteTimestamp, connect, disconnect, databasePath };

@@ -1,43 +1,45 @@
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const h = require('./helpers');
-let S;
-before(async () => { S = await h.start(); });
+const helpers = require('./helpers');
+
+let shop;
+before(async () => { shop = await helpers.start(); });
 
 test('SSRF: ссылки во внутреннюю сеть отклоняются', async () => {
   const { assertPublicUrl } = require('../src/server');
-  for (const u of ['https://127.0.0.1/a.jpg', 'https://localhost/a.jpg', 'https://169.254.169.254/latest', 'https://10.0.0.5/x', 'https://192.168.1.1/x', 'https://[::1]/x', 'https://172.16.0.1/x'])
-    await assert.rejects(() => assertPublicUrl(u), undefined, u);
+  const internalUrls = ['https://127.0.0.1/a.jpg', 'https://localhost/a.jpg', 'https://169.254.169.254/latest', 'https://10.0.0.5/x',
+    'https://192.168.1.1/x', 'https://[::1]/x', 'https://172.16.0.1/x'];
+  for (const internalUrl of internalUrls) await assert.rejects(() => assertPublicUrl(internalUrl), undefined, internalUrl);
 });
 
-test('CSV: формулы экранируются при выгрузке и не портят названия при загрузке', () => {
-  const stock = require('../src/inventory/import-export');
-  S.db.prepare("INSERT INTO products (name, price, stock) VALUES ('=HYPERLINK(\"x\")', 100, 1)").run();
-  const csv = stock.exportCsv();
-  assert.match(csv, /'=HYPERLINK/);
-  assert.doesNotMatch(csv, /(^|;)=HYPERLINK/m);
-  const before = S.db.prepare('SELECT COUNT(*) n FROM products').get().n;
-  stock.importCsv(csv);
-  assert.equal(S.db.prepare('SELECT COUNT(*) n FROM products').get().n, before); // повторная загрузка ничего не дублирует
-  assert.equal(S.db.prepare("SELECT COUNT(*) n FROM products WHERE name LIKE '''=%'").get().n, 0);
+test('CSV: формулы экранируются при выгрузке и не портят названия при загрузке', async () => {
+  const stockFiles = require('../src/inventory/import-export');
+  await shop.database.product.create({ data: { name: '=HYPERLINK("x")', price: 100, stock: 1 } });
+  const exportedCsv = await stockFiles.exportCsv();
+  assert.match(exportedCsv, /'=HYPERLINK/);
+  assert.doesNotMatch(exportedCsv, /(^|;)=HYPERLINK/m);
+  const productsBefore = await shop.database.product.count();
+  await stockFiles.importCsv(exportedCsv);
+  assert.equal(await shop.database.product.count(), productsBefore); // повторная загрузка ничего не дублирует
+  assert.equal(await shop.database.product.count({ where: { name: { startsWith: "'=" } } }), 0);
 });
 
 test('промокоды нельзя подбирать: после 12 попыток — 429', async () => {
-  let last;
-  for (let i = 0; i < 14; i++) last = await S.call(8001, 'POST', '/shop-api/promo', { code: 'NOPE' + i });
-  assert.equal(last.status, 429);
+  let lastResponse;
+  for (let attempt = 0; attempt < 14; attempt++) lastResponse = await shop.call(8001, 'POST', '/shop-api/promo', { code: 'NOPE' + attempt });
+  assert.equal(lastResponse.status, 429);
 });
 
 test('чужие данные недоступны: заказ другого покупателя, админ-маршруты, CRM-секрет', async () => {
-  assert.equal((await S.call(8002, 'GET', '/shop-api/admin/products')).status, 403);
-  assert.equal((await S.call(null, 'GET', '/shop-api/admin/products', undefined, { 'X-Webhook-Secret': 'wrong' })).status, 401);
-  assert.equal((await S.call(null, 'GET', '/shop-api/admin/products', undefined, { 'X-Webhook-Secret': 'crm-secret-test' })).status, 200);
-  assert.equal((await S.call(8002, 'POST', '/shop-api/orders/1/pay', {})).status, 404);
-  assert.equal((await S.call(null, 'GET', '/admin')).status, 404);
+  assert.equal((await shop.call(8002, 'GET', '/shop-api/admin/products')).status, 403);
+  assert.equal((await shop.call(null, 'GET', '/shop-api/admin/products', undefined, { 'X-Webhook-Secret': 'wrong' })).status, 401);
+  assert.equal((await shop.call(null, 'GET', '/shop-api/admin/products', undefined, { 'X-Webhook-Secret': 'crm-secret-test' })).status, 200);
+  assert.equal((await shop.call(8002, 'POST', '/shop-api/orders/1/pay', {})).status, 404);
+  assert.equal((await shop.call(null, 'GET', '/admin')).status, 404);
 });
 
 test('поддельная подпись и просроченная подпись отклоняются', async () => {
-  const bad = h.initData(8003).replace(/hash=[0-9a-f]+/, 'hash=' + '0'.repeat(64));
-  const r = await fetch(S.base + '/shop-api/orders', { headers: { 'X-Init-Data': bad } });
-  assert.equal(r.status, 401);
+  const forgedInitData = helpers.initData(8003).replace(/hash=[0-9a-f]+/, 'hash=' + '0'.repeat(64));
+  const response = await fetch(shop.base + '/shop-api/orders', { headers: { 'X-Init-Data': forgedInitData } });
+  assert.equal(response.status, 401);
 });

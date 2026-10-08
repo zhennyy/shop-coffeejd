@@ -1,173 +1,282 @@
-// stock.js — выгрузка и загрузка склада: Excel (.xlsx) и CSV (открывается в Excel/Numbers/Google Таблицах).
+// Выгрузка и загрузка склада: Excel (.xlsx) и CSV (открывается в Excel/Numbers/Google Таблицах).
 // Колонки: id; название; вариант; вариант2; категория; цена_руб; остаток; описание; тип; для_товаров; состав; шаг_г; мин_г
 //   тип: товар | на вес | на объём | доп | набор. На вес/объём: цена — за 100 г (мл), целые рубли; остаток, шаг и минимум — в граммах (мл).
 //   доп: в «для_товаров» через «|» названия товаров, к которым он предлагается (или *); набор: «состав» вида «12×2; 15×1» (id или точные названия).
 // Загрузка: строка с id обновляет цену, остаток (и состав/«для_товаров», если колонка есть); строка без id создаёт товар.
-const db = require('../database');
-const inv = require('./index');
+const { database, runInTransaction } = require('../database');
+const inventory = require('./index');
 
-const COLS = ['id', 'название', 'вариант', 'вариант2', 'категория', 'цена_руб', 'остаток', 'описание', 'тип', 'для_товаров', 'состав', 'шаг_г', 'мин_г'];
+const COLUMNS = ['id', 'название', 'вариант', 'вариант2', 'категория', 'цена_руб', 'остаток', 'описание', 'тип', 'для_товаров', 'состав', 'шаг_г', 'мин_г'];
+const COLUMN_WIDTHS = [6, 30, 12, 12, 14, 11, 9, 40, 9, 22, 18, 7, 7];
+const MAX_FILE_COLUMNS = 30;
+const MAX_STOCK = 1e7;
+const MAX_PRICE_RUBLES = 1e7;
+const DEFAULT_WEIGHT_STEP = 50;
+const DEFAULT_WEIGHT_MINIMUM = 100;
 
-const safeText = (s) => (/^[=+\-@]/.test(s) && Number.isNaN(Number(s)) ? "'" + s : s); // защита от формул в Excel
-const cell = (v) => {
-  const s = safeText(v == null ? '' : String(v));
-  return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+// Защита от формул в Excel: «=…», «+…», «-…», «@…» (кроме чисел)
+const protectText = (text) => (/^[=+\-@]/.test(text) && Number.isNaN(Number(text)) ? "'" + text : text);
+const formatCsvCell = (value) => {
+  const cellText = protectText(value == null ? '' : String(value));
+  return /[";\n\r]/.test(cellText) ? `"${cellText.replace(/"/g, '""')}"` : cellText;
 };
+const formatBundleParts = (bundleParts) => bundleParts.map((part) => `${part.product_id}×${part.qty}`).join('; ');
 
-const typeOf = (p) => (inv.isBundle(p.id) ? 'набор' : p.is_addon ? 'доп' : p.unit === 'g' ? 'на вес' : p.unit === 'ml' ? 'на объём' : 'товар');
-// строки таблицы (массив массивов значений)
-function tableRows() {
-  const rows = db.prepare('SELECT * FROM products ORDER BY is_addon, category, COALESCE(group_key, name), price').all();
-  return rows.map((p) => {
-    const w = Boolean(p.unit);
-    return [p.id, p.group_key || p.name, p.option_label || '', p.option2_label || '', p.category || '', w ? p.price : p.price / 100, p.stock, p.description || '',
-      typeOf(p), p.addon_for || '', inv.bundleOf(p.id).map((b) => `${b.product_id}×${b.qty}`).join('; '), w ? p.step : '', w ? p.min_qty : ''];
-  });
+function productType(product, bundleIds) {
+  if (bundleIds.has(product.id)) return 'набор';
+  if (product.is_addon) return 'доп';
+  if (product.unit === 'g') return 'на вес';
+  if (product.unit === 'ml') return 'на объём';
+  return 'товар';
 }
-function exportCsv() {
-  const lines = tableRows().map((r) => r.map(cell).join(';'));
-  // «;» и BOM — чтобы Excel сразу открыл кириллицу по столбцам
-  return '﻿' + [COLS.join(';'), ...lines].join('\r\n');
+
+// Строки таблицы склада (массив массивов значений)
+async function buildTableRows() {
+  const products = await database.product.findMany();
+  products.sort((first, second) => (first.is_addon - second.is_addon)
+    || compareText(first.category, second.category)
+    || compareText(first.group_key ?? first.name, second.group_key ?? second.name)
+    || first.price - second.price);
+  const bundleIds = await inventory.getBundleIds();
+  const tableRows = [];
+  for (const product of products) {
+    const isSoldByWeight = Boolean(product.unit);
+    tableRows.push([
+      product.id, product.group_key || product.name, product.option_label || '', product.option2_label || '', product.category || '',
+      isSoldByWeight ? product.price : product.price / 100, product.stock, product.description || '',
+      productType(product, bundleIds), product.addon_for || '', formatBundleParts(await inventory.getBundleParts(product.id)),
+      isSoldByWeight ? product.step : '', isSoldByWeight ? product.min_qty : '',
+    ]);
+  }
+  return tableRows;
 }
+
+// Сравнение как в SQLite ORDER BY: пустые значения первыми, затем по кодам символов
+function compareText(first, second) {
+  if (first == null) return second == null ? 0 : -1;
+  if (second == null) return 1;
+  return first < second ? -1 : first > second ? 1 : 0;
+}
+
+async function exportCsv() {
+  const lines = (await buildTableRows()).map((tableRow) => tableRow.map(formatCsvCell).join(';'));
+  return '﻿' + [COLUMNS.join(';'), ...lines].join('\r\n'); // «;» и BOM — Excel сразу откроет кириллицу по столбцам
+}
+
 async function exportXlsx() {
   const ExcelJS = require('exceljs');
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Склад');
-  ws.addRow(COLS).font = { bold: true };
-  for (const r of tableRows()) ws.addRow(r.map((v) => (typeof v === 'string' ? safeText(v) : v)));
-  ws.columns.forEach((c, i) => { c.width = [6, 30, 12, 12, 14, 11, 9, 40, 9, 22, 18, 7, 7][i]; });
-  ws.views = [{ state: 'frozen', ySplit: 1 }];
-  return Buffer.from(await wb.xlsx.writeBuffer());
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Склад');
+  worksheet.addRow(COLUMNS).font = { bold: true };
+  for (const tableRow of await buildTableRows()) worksheet.addRow(tableRow.map((value) => (typeof value === 'string' ? protectText(value) : value)));
+  worksheet.columns.forEach((column, columnIndex) => { column.width = COLUMN_WIDTHS[columnIndex]; });
+  worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+  return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-function parseCsv(text) {
-  text = String(text).replace(/^﻿/, '');
-  const first = text.split(/\r?\n/, 1)[0] || '';
-  const delim = [';', '\t', ','].sort((a, b) => first.split(b).length - first.split(a).length)[0];
-  const rows = []; let row = [], cur = '', q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
-    if (q) {
-      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c;
-    } else if (c === '"') q = true;
-    else if (c === delim) { row.push(cur); cur = ''; }
-    else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i + 1] === '\n') i++;
-      row.push(cur); cur = ''; if (row.some((x) => x.trim())) rows.push(row); row = [];
-    } else cur += c;
+function parseCsv(csvText) {
+  const text = String(csvText).replace(/^﻿/, '');
+  const headerLine = text.split(/\r?\n/, 1)[0] || '';
+  const delimiter = [';', '\t', ','].sort((first, second) => headerLine.split(second).length - headerLine.split(first).length)[0];
+  const rows = [];
+  let currentRow = [];
+  let currentCell = '';
+  let insideQuotes = false;
+  for (let position = 0; position < text.length; position++) {
+    const character = text[position];
+    if (insideQuotes) {
+      if (character === '"') {
+        if (text[position + 1] === '"') { currentCell += '"'; position++; } else insideQuotes = false;
+      } else currentCell += character;
+    } else if (character === '"') insideQuotes = true;
+    else if (character === delimiter) { currentRow.push(currentCell); currentCell = ''; }
+    else if (character === '\n' || character === '\r') {
+      if (character === '\r' && text[position + 1] === '\n') position++;
+      currentRow.push(currentCell); currentCell = '';
+      if (currentRow.some((cell) => cell.trim())) rows.push(currentRow);
+      currentRow = [];
+    } else currentCell += character;
   }
-  row.push(cur); if (row.some((x) => x.trim())) rows.push(row);
+  currentRow.push(currentCell);
+  if (currentRow.some((cell) => cell.trim())) rows.push(currentRow);
   return rows;
 }
-async function parseXlsx(buffer) {
+
+function cellToText(cellValue) {
+  if (cellValue == null) return '';
+  if (typeof cellValue !== 'object') return String(cellValue);
+  if (cellValue.result !== undefined) return cellToText(cellValue.result);
+  if (cellValue.richText) return cellValue.richText.map((richTextPart) => richTextPart.text).join('');
+  if (cellValue.text !== undefined) return String(cellValue.text);
+  if (cellValue instanceof Date) return cellValue.toISOString();
+  return '';
+}
+
+async function parseXlsx(fileBuffer) {
   const ExcelJS = require('exceljs');
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  const ws = wb.worksheets[0];
-  if (!ws) throw new Error('В файле нет листов');
-  const val = (v) => {
-    if (v == null) return '';
-    if (typeof v === 'object') {
-      if (v.result !== undefined) return val(v.result);
-      if (v.richText) return v.richText.map((x) => x.text).join('');
-      if (v.text !== undefined) return String(v.text);
-      if (v instanceof Date) return v.toISOString();
-      return '';
-    }
-    return String(v);
-  };
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(fileBuffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) throw new Error('В файле нет листов');
   const rows = [];
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    const arr = [];
-    for (let i = 1; i <= Math.min(row.cellCount, 30); i++) arr.push(val(row.getCell(i).value));
-    if (arr.some((x) => x.trim())) rows.push(arr);
+  worksheet.eachRow({ includeEmpty: false }, (worksheetRow) => {
+    const cells = [];
+    for (let columnNumber = 1; columnNumber <= Math.min(worksheetRow.cellCount, MAX_FILE_COLUMNS); columnNumber++) {
+      cells.push(cellToText(worksheetRow.getCell(columnNumber).value));
+    }
+    if (cells.some((cell) => cell.trim())) rows.push(cells);
   });
   return rows;
 }
 
-const num = (v) => Number(String(v).replace(/\s/g, '').replace(',', '.'));
-const BAD = (m) => Object.assign(new Error(m), { expose: true });
+const parseNumber = (value) => Number(String(value).replace(/\s/g, '').replace(',', '.'));
+const userError = (message) => Object.assign(new Error(message), { expose: true });
 
-function parseParts(text, line) {
-  const out = [];
-  for (const raw of String(text || '').split(/[;\n]+/).map((s) => s.trim()).filter(Boolean)) {
-    const m = raw.match(/^(.+?)\s*[x×*хХ]\s*(\d+)$/i);
-    const key = (m ? m[1] : raw).trim(), qty = m ? parseInt(m[2], 10) : 1;
-    const p = /^\d+$/.test(key) ? db.prepare('SELECT id FROM products WHERE id = ?').get(parseInt(key, 10)) : db.prepare('SELECT id FROM products WHERE name = ?').get(key);
-    if (!p) throw BAD(`строка ${line}: в составе «${key}» — такого товара нет`);
-    out.push({ product_id: p.id, qty });
+// «12×2; Эфиопия×1» → [{product_id, qty}]
+async function parseBundleParts(partsText, lineNumber) {
+  const bundleParts = [];
+  for (const rawPart of String(partsText || '').split(/[;\n]+/).map((part) => part.trim()).filter(Boolean)) {
+    const partMatch = rawPart.match(/^(.+?)\s*[x×*хХ]\s*(\d+)$/i);
+    const productKey = (partMatch ? partMatch[1] : rawPart).trim();
+    const partQuantity = partMatch ? parseInt(partMatch[2], 10) : 1;
+    const product = /^\d+$/.test(productKey)
+      ? await database.product.findUnique({ where: { id: parseInt(productKey, 10) }, select: { id: true } })
+      : await database.product.findFirst({ where: { name: productKey }, select: { id: true } });
+    if (!product) throw userError(`строка ${lineNumber}: в составе «${productKey}» — такого товара нет`);
+    bundleParts.push({ product_id: product.id, qty: partQuantity });
   }
-  return out;
+  return bundleParts;
 }
 
-function importRows(rows) {
-  if (rows.length < 2) throw new Error('В файле нет строк с товарами');
-  const head = rows[0].map((h) => String(h).trim().toLowerCase());
-  const col = (...names) => head.findIndex((h) => names.includes(h));
-  const ix = {
-    id: col('id'), name: col('название', 'name'), opt: col('вариант', 'option'), opt2: col('вариант2', 'option2'), cat: col('категория', 'category'),
-    price: col('цена_руб', 'цена', 'price', 'price_rub'), stock: col('остаток', 'stock'), desc: col('описание', 'description'),
-    type: col('тип', 'type'), addon: col('для_товаров', 'addon_for'), parts: col('состав', 'bundle'), step: col('шаг_г', 'шаг', 'step'), min: col('мин_г', 'мин', 'min'),
+function findColumnIndexes(headerRow) {
+  const headers = headerRow.map((header) => String(header).trim().toLowerCase());
+  const indexOf = (...possibleNames) => headers.findIndex((header) => possibleNames.includes(header));
+  return {
+    id: indexOf('id'), name: indexOf('название', 'name'), option: indexOf('вариант', 'option'), option2: indexOf('вариант2', 'option2'),
+    category: indexOf('категория', 'category'), price: indexOf('цена_руб', 'цена', 'price', 'price_rub'), stock: indexOf('остаток', 'stock'),
+    description: indexOf('описание', 'description'), type: indexOf('тип', 'type'), addonFor: indexOf('для_товаров', 'addon_for'),
+    bundleParts: indexOf('состав', 'bundle'), step: indexOf('шаг_г', 'шаг', 'step'), minimum: indexOf('мин_г', 'мин', 'min'),
   };
-  if (ix.stock < 0 && ix.price < 0) throw new Error('Не нашла колонки «остаток» или «цена_руб» — берите файл из выгрузки');
-  const res = { updated: 0, created: 0, unchanged: 0, errors: [] };
-  const get = db.prepare('SELECT * FROM products WHERE id = ?');
-  const bundles = []; // составы применяем после всех строк — в них могут быть только что созданные товары по названию
-  db.transaction(() => {
-    rows.slice(1).forEach((r, n) => {
-      const line = n + 2, g = (i) => (i >= 0 ? String(r[i] ?? '').trim().replace(/^'(?=[=+\-@])/, '') : '');
-      try {
-        const id = g(ix.id);
-        const stock = g(ix.stock) === '' ? null : num(g(ix.stock));
-        if (stock !== null && (!Number.isInteger(stock) || stock < 0 || stock > 1e7)) throw BAD(`строка ${line}: остаток «${g(ix.stock)}» не подходит`);
-        const priceRub = g(ix.price) === '' ? null : num(g(ix.price));
-        if (priceRub !== null && (!Number.isFinite(priceRub) || priceRub <= 0 || priceRub > 1e7)) throw BAD(`строка ${line}: цена «${g(ix.price)}» не подходит`);
-        const type = g(ix.type).toLowerCase();
-        if (id) {
-          const cur = get.get(parseInt(id, 10));
-          if (!cur) throw BAD(`строка ${line}: товара с id ${id} нет`);
-          const weight = Boolean(cur.unit);
-          let np = cur.price;
-          if (priceRub !== null) {
-            if (weight && !Number.isInteger(priceRub)) throw BAD(`строка ${line}: цена за 100 г — целые рубли`);
-            np = weight ? priceRub : Math.round(priceRub * 100);
-          }
-          const bundle = inv.isBundle(cur.id) || (ix.parts >= 0 && g(ix.parts));
-          let changed = false;
-          if (np !== cur.price) { db.prepare('UPDATE products SET price = ? WHERE id = ?').run(np, cur.id); changed = true; }
-          if (stock !== null && !bundle && stock !== cur.stock) { inv.setStock(cur.id, stock, 'загрузка файла'); changed = true; }
-          if (ix.addon >= 0 && cur.is_addon && g(ix.addon) !== (cur.addon_for || '')) { db.prepare('UPDATE products SET addon_for = ? WHERE id = ?').run(g(ix.addon) || null, cur.id); changed = true; }
-          if (ix.parts >= 0 && g(ix.parts) !== inv.bundleOf(cur.id).map((b) => `${b.product_id}×${b.qty}`).join('; ')) { bundles.push([cur.id, g(ix.parts), line]); changed = true; }
-          return changed ? res.updated++ : res.unchanged++;
-        }
-        const base = g(ix.name), opt = g(ix.opt), opt2 = g(ix.opt2);
-        if (!base || priceRub === null) throw BAD(`строка ${line}: для нового товара нужны название и цена`);
-        const tnorm = type.replace(/\s/g, ''), unit = tnorm === 'навес' ? 'g' : tnorm === 'наобъём' || tnorm === 'наобъем' ? 'ml' : null, weight = Boolean(unit);
-        if (weight && !Number.isInteger(priceRub)) throw BAD(`строка ${line}: цена за 100 г — целые рубли`);
-        const step = weight ? Math.max(1, parseInt(g(ix.step), 10) || 50) : 1, min = weight ? Math.max(1, parseInt(g(ix.min), 10) || 100) : 1;
-        const full = [base, opt, opt2].filter(Boolean).join(' · ');
-        const r2 = db.prepare(`INSERT INTO products (name, description, price, stock, category, group_key, option_label, option2_label, unit, step, min_qty, is_addon, addon_for)
-                               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(full, g(ix.desc) || null, weight ? priceRub : Math.round(priceRub * 100), stock ?? 0, g(ix.cat) || null,
-          opt || opt2 ? base : null, opt || null, opt2 || null, unit, step, min, type === 'доп' ? 1 : 0, type === 'доп' ? (g(ix.addon) || '*') : null);
-        inv.log(Number(r2.lastInsertRowid), stock ?? 0, stock ?? 0, 'добавлен загрузкой файла');
-        if (type === 'набор') bundles.push([Number(r2.lastInsertRowid), g(ix.parts), line]);
-        res.created++;
-      } catch (e) {
-        if (!e.expose) throw e;
-        res.errors.push(e.message);
-      }
-    });
-    for (const [bid, text, line] of bundles) {
-      try { inv.setBundle(bid, parseParts(text, line)); } catch (e) { if (!e.expose) throw e; res.errors.push(`строка ${line}: ${e.message.replace(/^строка \d+: /, '')}`); }
-    }
-    inv.syncBundles();
-  })();
-  return res;
 }
-const importCsv = (text) => importRows(parseCsv(text));
-const importXlsx = async (buf) => importRows(await parseXlsx(buf));
 
-const reportText = (r) => `📥 Склад обновлён\nИзменено: ${r.updated} · Добавлено: ${r.created} · Без изменений: ${r.unchanged}` +
-  (r.errors.length ? `\n\n⚠️ Пропущено ${r.errors.length}:\n` + r.errors.slice(0, 10).join('\n') + (r.errors.length > 10 ? '\n…' : '') : '');
+// Обновить существующий товар по строке файла. Возвращает true, если что-то изменилось.
+async function updateProductFromRow(existingProduct, rowData, columns, pendingBundles) {
+  const { lineNumber, priceRubles, stock, readCell } = rowData;
+  const isSoldByWeight = Boolean(existingProduct.unit);
+  let newPrice = existingProduct.price;
+  if (priceRubles !== null) {
+    if (isSoldByWeight && !Number.isInteger(priceRubles)) throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
+    newPrice = isSoldByWeight ? priceRubles : Math.round(priceRubles * 100);
+  }
+  const isBundleRow = (await inventory.isBundle(existingProduct.id)) || (columns.bundleParts >= 0 && readCell(columns.bundleParts));
+  let isChanged = false;
+  if (newPrice !== existingProduct.price) {
+    await database.product.update({ where: { id: existingProduct.id }, data: { price: newPrice } });
+    isChanged = true;
+  }
+  if (stock !== null && !isBundleRow && stock !== existingProduct.stock) {
+    await inventory.setStock(existingProduct.id, stock, 'загрузка файла');
+    isChanged = true;
+  }
+  if (columns.addonFor >= 0 && existingProduct.is_addon && readCell(columns.addonFor) !== (existingProduct.addon_for || '')) {
+    await database.product.update({ where: { id: existingProduct.id }, data: { addon_for: readCell(columns.addonFor) || null } });
+    isChanged = true;
+  }
+  if (columns.bundleParts >= 0 && readCell(columns.bundleParts) !== formatBundleParts(await inventory.getBundleParts(existingProduct.id))) {
+    pendingBundles.push({ bundleId: existingProduct.id, partsText: readCell(columns.bundleParts), lineNumber });
+    isChanged = true;
+  }
+  return isChanged;
+}
 
-module.exports = { exportCsv, exportXlsx, importCsv, importXlsx, importRows, parseCsv, parseXlsx, reportText, COLS };
+// Создать товар по строке файла без id
+async function createProductFromRow(rowData, columns, pendingBundles) {
+  const { lineNumber, priceRubles, stock, readCell, productTypeName } = rowData;
+  const baseName = readCell(columns.name);
+  const optionLabel = readCell(columns.option);
+  const option2Label = readCell(columns.option2);
+  if (!baseName || priceRubles === null) throw userError(`строка ${lineNumber}: для нового товара нужны название и цена`);
+  const compactType = productTypeName.replace(/\s/g, '');
+  const unit = compactType === 'навес' ? 'g' : compactType === 'наобъём' || compactType === 'наобъем' ? 'ml' : null;
+  const isSoldByWeight = Boolean(unit);
+  if (isSoldByWeight && !Number.isInteger(priceRubles)) throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
+  const isAddon = productTypeName === 'доп';
+  const createdProduct = await database.product.create({
+    data: {
+      name: [baseName, optionLabel, option2Label].filter(Boolean).join(' · '),
+      description: readCell(columns.description) || null,
+      price: isSoldByWeight ? priceRubles : Math.round(priceRubles * 100),
+      stock: stock ?? 0,
+      category: readCell(columns.category) || null,
+      group_key: optionLabel || option2Label ? baseName : null,
+      option_label: optionLabel || null,
+      option2_label: option2Label || null,
+      unit,
+      step: isSoldByWeight ? Math.max(1, parseInt(readCell(columns.step), 10) || DEFAULT_WEIGHT_STEP) : 1,
+      min_qty: isSoldByWeight ? Math.max(1, parseInt(readCell(columns.minimum), 10) || DEFAULT_WEIGHT_MINIMUM) : 1,
+      is_addon: isAddon ? 1 : 0,
+      addon_for: isAddon ? (readCell(columns.addonFor) || '*') : null,
+    },
+  });
+  await inventory.writeStockLog(createdProduct.id, stock ?? 0, stock ?? 0, 'добавлен загрузкой файла');
+  if (productTypeName === 'набор') pendingBundles.push({ bundleId: createdProduct.id, partsText: readCell(columns.bundleParts), lineNumber });
+}
+
+async function importRows(rows) {
+  if (rows.length < 2) throw new Error('В файле нет строк с товарами');
+  const columns = findColumnIndexes(rows[0]);
+  if (columns.stock < 0 && columns.price < 0) throw new Error('Не нашла колонки «остаток» или «цена_руб» — берите файл из выгрузки');
+  const importResult = { updated: 0, created: 0, unchanged: 0, errors: [] };
+  // составы наборов применяем после всех строк — в них могут быть только что созданные товары по названию
+  const pendingBundles = [];
+
+  await runInTransaction(async () => {
+    for (const [rowIndex, fileRow] of rows.slice(1).entries()) {
+      const lineNumber = rowIndex + 2;
+      // «'=…» из нашей же выгрузки — возвращаем как было
+      const readCell = (columnIndex) => (columnIndex >= 0 ? String(fileRow[columnIndex] ?? '').trim().replace(/^'(?=[=+\-@])/, '') : '');
+      try {
+        const stock = readCell(columns.stock) === '' ? null : parseNumber(readCell(columns.stock));
+        if (stock !== null && (!Number.isInteger(stock) || stock < 0 || stock > MAX_STOCK)) throw userError(`строка ${lineNumber}: остаток «${readCell(columns.stock)}» не подходит`);
+        const priceRubles = readCell(columns.price) === '' ? null : parseNumber(readCell(columns.price));
+        if (priceRubles !== null && (!Number.isFinite(priceRubles) || priceRubles <= 0 || priceRubles > MAX_PRICE_RUBLES)) {
+          throw userError(`строка ${lineNumber}: цена «${readCell(columns.price)}» не подходит`);
+        }
+        const rowData = { lineNumber, priceRubles, stock, readCell, productTypeName: readCell(columns.type).toLowerCase() };
+        const productId = readCell(columns.id);
+        if (productId) {
+          const existingProduct = await database.product.findUnique({ where: { id: parseInt(productId, 10) } });
+          if (!existingProduct) throw userError(`строка ${lineNumber}: товара с id ${productId} нет`);
+          if (await updateProductFromRow(existingProduct, rowData, columns, pendingBundles)) importResult.updated++;
+          else importResult.unchanged++;
+        } else {
+          await createProductFromRow(rowData, columns, pendingBundles);
+          importResult.created++;
+        }
+      } catch (rowError) {
+        if (!rowError.expose) throw rowError;
+        importResult.errors.push(rowError.message);
+      }
+    }
+    for (const { bundleId, partsText, lineNumber } of pendingBundles) {
+      try {
+        await inventory.setBundle(bundleId, await parseBundleParts(partsText, lineNumber));
+      } catch (bundleError) {
+        if (!bundleError.expose) throw bundleError;
+        importResult.errors.push(`строка ${lineNumber}: ${bundleError.message.replace(/^строка \d+: /, '')}`);
+      }
+    }
+    await inventory.syncBundles();
+  });
+  return importResult;
+}
+
+const importCsv = (csvText) => importRows(parseCsv(csvText));
+const importXlsx = async (fileBuffer) => importRows(await parseXlsx(fileBuffer));
+
+const importReportText = (importResult) => `📥 Склад обновлён\nИзменено: ${importResult.updated} · Добавлено: ${importResult.created} · Без изменений: ${importResult.unchanged}` +
+  (importResult.errors.length
+    ? `\n\n⚠️ Пропущено ${importResult.errors.length}:\n` + importResult.errors.slice(0, 10).join('\n') + (importResult.errors.length > 10 ? '\n…' : '')
+    : '');
+
+module.exports = { exportCsv, exportXlsx, importCsv, importXlsx, importRows, parseCsv, parseXlsx, importReportText, COLUMNS };

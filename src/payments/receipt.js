@@ -1,63 +1,68 @@
-// payments/receipt.js — чек 54-ФЗ для ЮKassa («Чеки от ЮKassa» или подключённая онлайн-касса).
+// Чек 54-ФЗ для ЮKassa («Чеки от ЮKassa» или подключённая онлайн-касса).
 // Включается переменной YOOKASSA_RECEIPTS=on. НДС: RECEIPT_VAT_CODE (1 — без НДС, по умолчанию),
 // система налогообложения: RECEIPT_TAX_SYSTEM (1–6, если у магазина их несколько).
 // Важно: сумма позиций чека обязана совпасть с суммой платежа до копейки — скидку промокода делим по позициям.
-const enabled = () => /^(on|1|true|yes)$/i.test(String(process.env.YOOKASSA_RECEIPTS || ''));
+const isEnabled = () => /^(on|1|true|yes)$/i.test(String(process.env.YOOKASSA_RECEIPTS || ''));
 
-const rub = (kop) => (kop / 100).toFixed(2);
+const formatAmount = (kopecks) => (kopecks / 100).toFixed(2);
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-function normalizePhone(p) {
-  let d = String(p || '').replace(/\D/g, '');
-  if (d.length === 10) d = '7' + d;
-  if (d.length === 11 && d[0] === '8') d = '7' + d.slice(1);
-  return /^7\d{10}$/.test(d) ? d : null;
+function normalizePhone(phoneText) {
+  let digits = String(phoneText || '').replace(/\D/g, '');
+  if (digits.length === 10) digits = '7' + digits;
+  if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+  return /^7\d{10}$/.test(digits) ? digits : null;
 }
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 // Контакт покупателя для чека: {phone} или {email}; строка может содержать то и другое
-function contactFrom(text) {
-  const s = String(text || '');
-  const email = (s.match(/[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}/) || [])[0];
-  const phone = normalizePhone(s.replace(email || '', ''));
+function contactFrom(contactText) {
+  const text = String(contactText || '');
+  const email = (text.match(/[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}/) || [])[0];
+  const phone = normalizePhone(text.replace(email || '', ''));
   if (phone) return { phone };
-  if (email && EMAIL.test(email)) return { email };
+  if (email && EMAIL_PATTERN.test(email)) return { email };
   return null;
 }
 
 // items: [{name, quantity, price (коп. за штуку)}], goodsTotal — товары после скидки (коп.), delivery — коп.
 function buildReceipt({ items, goodsTotal, delivery = 0, contact }) {
   if (!contact || (!contact.phone && !contact.email)) throw new Error('Для чека нужен телефон или e-mail');
-  const vat = parseInt(process.env.RECEIPT_VAT_CODE || '1', 10);
-  const sum0 = items.reduce((a, i) => a + i.price * i.quantity, 0);
-  if (!(sum0 > 0)) throw new Error('Пустой заказ');
+  const vatCode = parseInt(process.env.RECEIPT_VAT_CODE || '1', 10);
+  const totalBeforeDiscount = items.reduce((sum, receiptItem) => sum + receiptItem.price * receiptItem.quantity, 0);
+  if (!(totalBeforeDiscount > 0)) throw new Error('Пустой заказ');
+
   // доли строк после скидки: округляем, остаток копеек уходит в последнюю строку — сумма точная
-  let left = goodsTotal;
-  const lines = items.map((it, idx) => {
-    const t0 = it.price * it.quantity;
-    const t = idx === items.length - 1 ? left : Math.round((t0 * goodsTotal) / sum0);
-    left -= t;
-    return { it, t };
+  let kopecksLeft = goodsTotal;
+  const discountedLines = items.map((receiptItem, itemIndex) => {
+    const lineTotalBeforeDiscount = receiptItem.price * receiptItem.quantity;
+    const lineTotal = itemIndex === items.length - 1 ? kopecksLeft : Math.round((lineTotalBeforeDiscount * goodsTotal) / totalBeforeDiscount);
+    kopecksLeft -= lineTotal;
+    return { receiptItem, lineTotal };
   });
-  const out = [];
-  const push = (description, qty, unitKop, subject) => {
-    if (qty <= 0 || unitKop <= 0) return;
-    out.push({
-      description: String(description).slice(0, 128), quantity: qty.toFixed(3), amount: { value: rub(unitKop), currency: 'RUB' },
-      vat_code: vat, payment_mode: 'full_payment', payment_subject: subject,
+
+  const receiptPositions = [];
+  const addPosition = (description, quantity, unitPriceKopecks, paymentSubject) => {
+    if (quantity <= 0 || unitPriceKopecks <= 0) return;
+    receiptPositions.push({
+      description: String(description).slice(0, 128), quantity: quantity.toFixed(3), amount: { value: formatAmount(unitPriceKopecks), currency: 'RUB' },
+      vat_code: vatCode, payment_mode: 'full_payment', payment_subject: paymentSubject,
     });
   };
-  for (const { it, t } of lines) {
-    if (t <= 0) continue;
-    const unit = Math.floor(t / it.quantity), rem = t - unit * it.quantity; // rem штук по unit+1, остальные по unit
-    push(it.name, it.quantity - rem, unit, 'commodity');
-    push(it.name, rem, unit + 1, 'commodity');
+  for (const { receiptItem, lineTotal } of discountedLines) {
+    if (lineTotal <= 0) continue;
+    // копейки не делятся поровну: часть штук идёт по цене +1 копейка
+    const unitPrice = Math.floor(lineTotal / receiptItem.quantity);
+    const unitsWithExtraKopeck = lineTotal - unitPrice * receiptItem.quantity;
+    addPosition(receiptItem.name, receiptItem.quantity - unitsWithExtraKopeck, unitPrice, 'commodity');
+    addPosition(receiptItem.name, unitsWithExtraKopeck, unitPrice + 1, 'commodity');
   }
-  push('Доставка', 1, delivery, 'service');
-  const receipt = { customer: contact.phone ? { phone: contact.phone } : { email: contact.email }, items: out };
-  if (process.env.RECEIPT_TAX_SYSTEM) receipt.tax_system_code = parseInt(process.env.RECEIPT_TAX_SYSTEM, 10);
-  const total = out.reduce((a, x) => a + Math.round(parseFloat(x.amount.value) * 100) * Math.round(parseFloat(x.quantity)), 0);
-  if (total !== goodsTotal + delivery) throw new Error(`Чек не сошёлся с суммой платежа (${total} ≠ ${goodsTotal + delivery})`);
-  return receipt;
+  addPosition('Доставка', 1, delivery, 'service');
+
+  const fiscalReceipt = { customer: contact.phone ? { phone: contact.phone } : { email: contact.email }, items: receiptPositions };
+  if (process.env.RECEIPT_TAX_SYSTEM) fiscalReceipt.tax_system_code = parseInt(process.env.RECEIPT_TAX_SYSTEM, 10);
+  const receiptTotal = receiptPositions.reduce((sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)), 0);
+  if (receiptTotal !== goodsTotal + delivery) throw new Error(`Чек не сошёлся с суммой платежа (${receiptTotal} ≠ ${goodsTotal + delivery})`);
+  return fiscalReceipt;
 }
 
-module.exports = { enabled, buildReceipt, contactFrom, normalizePhone };
+module.exports = { isEnabled, buildReceipt, contactFrom, normalizePhone };

@@ -15,42 +15,51 @@ process.env.WEBHOOK_PORT = String(30000 + Math.floor(Math.random() * 20000));
 // ---- подставная ЮKassa: запоминаем платежи, чтобы проверять чеки и суммы ----
 const axios = require('axios');
 const payments = new Map();
-let payN = 0;
+let paymentCounter = 0;
 axios.post = async (url, body) => {
   if (url.includes('/v3/payments')) {
-    const id = 'pay-' + ++payN;
-    payments.set(id, { id, body, status: 'pending', metadata: body.metadata, amount: body.amount });
-    return { data: { id, confirmation: { confirmation_url: 'https://pay.test/' + id } } };
+    const paymentId = 'pay-' + ++paymentCounter;
+    payments.set(paymentId, { id: paymentId, body, status: 'pending', metadata: body.metadata, amount: body.amount });
+    return { data: { id: paymentId, confirmation: { confirmation_url: 'https://pay.test/' + paymentId } } };
   }
   throw new Error('unexpected POST ' + url);
 };
 axios.get = async (url) => {
-  const m = url.match(/payments\/(pay-\d+)/);
-  if (m) return { data: payments.get(m[1]) };
+  const paymentMatch = url.match(/payments\/(pay-\d+)/);
+  if (paymentMatch) return { data: payments.get(paymentMatch[1]) };
   throw new Error('unexpected GET ' + url);
 };
 
-const sent = []; // сообщения «в Telegram»
-const bot = { telegram: { sendMessage: async (chat, text, extra) => { sent.push({ chat, text, extra }); return { message_id: sent.length }; },
-  editMessageText: async () => ({}), getFileLink: async () => 'https://x', sendDocument: async () => ({}), deleteMessage: async () => ({}) } };
+const sentMessages = []; // сообщения «в Telegram»
+const fakeBot = {
+  telegram: {
+    sendMessage: async (chatId, text, extra) => { sentMessages.push({ chat: chatId, text, extra }); return { message_id: sentMessages.length }; },
+    editMessageText: async () => ({}), getFileLink: async () => 'https://x', sendDocument: async () => ({}), deleteMessage: async () => ({}),
+  },
+};
 
-function initData(userId, extra = {}) {
-  const params = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: userId, first_name: 'T' }), ...extra });
-  const data = [...params.entries()].map(([k, v]) => `${k}=${v}`).sort().join('\n');
-  const secret = crypto.createHmac('sha256', 'WebAppData').update(process.env.BOT_TOKEN).digest();
-  params.set('hash', crypto.createHmac('sha256', secret).update(data).digest('hex'));
-  return params.toString();
+// Подписанные Telegram данные пользователя — как их присылает мини-приложение
+function initData(userId, extraFields = {}) {
+  const parameters = new URLSearchParams({ auth_date: String(Math.floor(Date.now() / 1000)), user: JSON.stringify({ id: userId, first_name: 'T' }), ...extraFields });
+  const dataCheckString = [...parameters.entries()].map(([fieldName, fieldValue]) => `${fieldName}=${fieldValue}`).sort().join('\n');
+  const secretKey = crypto.createHmac('sha256', 'WebAppData').update(process.env.BOT_TOKEN).digest();
+  parameters.set('hash', crypto.createHmac('sha256', secretKey).update(dataCheckString).digest('hex'));
+  return parameters.toString();
 }
 
 async function start() {
+  const { initializeDatabase } = require('../src/database/initialize');
+  await initializeDatabase();
   const { startWebhookServer } = require('../src/server');
-  startWebhookServer(bot, { aiPick: async () => ({ advice: '', ids: [] }) });
-  await new Promise((r) => setTimeout(r, 400));
-  const base = `http://127.0.0.1:${process.env.WEBHOOK_PORT}`;
-  const call = (user, method, p, body, headers = {}) => fetch(base + p, {
-    method, headers: { 'Content-Type': 'application/json', ...(user ? { 'X-Init-Data': initData(user) } : {}), ...headers },
+  startWebhookServer(fakeBot, { aiPick: async () => ({ advice: '', ids: [] }) });
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const baseUrl = `http://127.0.0.1:${process.env.WEBHOOK_PORT}`;
+  const call = (userId, method, urlPath, body, headers = {}) => fetch(baseUrl + urlPath, {
+    method,
+    headers: { 'Content-Type': 'application/json', ...(userId ? { 'X-Init-Data': initData(userId) } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
-  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-  return { base, call, payments, sent, bot, db: require('../src/database') };
+  }).then(async (response) => ({ status: response.status, body: await response.json().catch(() => ({})) }));
+  const { database } = require('../src/database');
+  return { base: baseUrl, call, payments, sent: sentMessages, bot: fakeBot, database };
 }
-module.exports = { start, payments, sent, bot, initData };
+module.exports = { start, payments, sent: sentMessages, bot: fakeBot, initData };

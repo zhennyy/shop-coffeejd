@@ -1,94 +1,138 @@
-// inventory.js — единственное место, где меняются остатки: каждое изменение попадает в журнал (для отчётов),
+// Склад — единственное место, где меняются остатки. Каждое изменение попадает в журнал (для отчётов),
 // а остаток наборов считается по составу.
-const db = require('../database');
+const { database, runInTransaction } = require('../database');
 
-const isBundle = (id) => Boolean(db.prepare('SELECT 1 FROM bundle_items WHERE bundle_id = ?').get(id));
+const MAX_BUNDLE_PARTS = 20;
+const userError = (message) => Object.assign(new Error(message), { expose: true });
 
-function log(productId, delta, after, reason, orderId = null) {
+async function isBundle(productId) {
+  return (await database.bundleItem.count({ where: { bundle_id: productId } })) > 0;
+}
+
+async function getStock(productId) {
+  const product = await database.product.findUnique({ where: { id: productId }, select: { stock: true } });
+  return product ? product.stock : null;
+}
+
+async function writeStockLog(productId, delta, stockAfter, reason, orderId = null) {
   if (!delta) return;
-  db.prepare('INSERT INTO stock_log (product_id, delta, after, reason, order_id) VALUES (?,?,?,?,?)').run(productId, delta, after, reason, orderId);
+  await database.stockLogEntry.create({ data: { product_id: productId, delta, after: stockAfter, reason, order_id: orderId } });
 }
 
 // Пересчитать остаток всех наборов: сколько наборов можно собрать из того, что есть
-function syncBundles() {
-  const bundles = db.prepare('SELECT DISTINCT bundle_id FROM bundle_items').all();
-  const comp = db.prepare(`SELECT b.qty, p.stock FROM bundle_items b JOIN products p ON p.id = b.product_id WHERE b.bundle_id = ?`);
-  const set = db.prepare('UPDATE products SET stock = ? WHERE id = ?');
-  for (const { bundle_id } of bundles) {
-    const rows = comp.all(bundle_id);
-    set.run(rows.length ? Math.min(...rows.map((r) => Math.floor(r.stock / r.qty))) : 0, bundle_id);
+async function syncBundles() {
+  const bundleParts = await database.bundleItem.findMany();
+  const componentStocks = await database.product.findMany({
+    where: { id: { in: [...new Set(bundleParts.map((part) => part.product_id))] } },
+    select: { id: true, stock: true },
+  });
+  const stockByProductId = new Map(componentStocks.map((product) => [product.id, product.stock]));
+  const partsByBundleId = new Map();
+  for (const part of bundleParts) {
+    if (!partsByBundleId.has(part.bundle_id)) partsByBundleId.set(part.bundle_id, []);
+    partsByBundleId.get(part.bundle_id).push(part);
+  }
+  for (const [bundleId, parts] of partsByBundleId) {
+    const existingParts = parts.filter((part) => stockByProductId.has(part.product_id));
+    const assemblableCount = existingParts.length
+      ? Math.min(...existingParts.map((part) => Math.floor(stockByProductId.get(part.product_id) / part.qty)))
+      : 0;
+    await database.product.updateMany({ where: { id: bundleId }, data: { stock: assemblableCount } });
   }
 }
 
 // Новый остаток товара (для наборов не применяется — они считаются сами)
-function setStock(id, value, reason) {
-  if (isBundle(id)) return false;
-  const cur = db.prepare('SELECT stock FROM products WHERE id = ?').get(id);
-  if (!cur) return false;
-  db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(value, id);
-  log(id, value - cur.stock, value, reason);
-  syncBundles();
-  return true;
+async function setStock(productId, newStock, reason) {
+  return runInTransaction(async () => {
+    if (await isBundle(productId)) return false;
+    const currentStock = await getStock(productId);
+    if (currentStock === null) return false;
+    await database.product.update({ where: { id: productId }, data: { stock: newStock } });
+    await writeStockLog(productId, newStock - currentStock, newStock, reason);
+    await syncBundles();
+    return true;
+  });
 }
 
-// Списать n штук (товар или набор целиком). Возвращает, сколько реально списано (не больше, чем есть).
-function take(id, n, reason, orderId) {
-  const p = db.prepare('SELECT stock FROM products WHERE id = ?').get(id);
-  if (!p) return 0;
-  const k = Math.max(0, Math.min(p.stock, n));
-  if (!k) return 0;
-  const parts = db.prepare('SELECT product_id, qty FROM bundle_items WHERE bundle_id = ?').all(id);
-  if (parts.length) {
-    for (const c of parts) {
-      const left = db.prepare('SELECT stock FROM products WHERE id = ?').get(c.product_id).stock - c.qty * k;
-      db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(left, c.product_id);
-      log(c.product_id, -c.qty * k, left, `набор «${db.prepare('SELECT name FROM products WHERE id = ?').get(id).name}»`, orderId);
+// Списать quantity штук (товар или набор целиком). Возвращает, сколько реально списано (не больше, чем есть).
+async function takeFromStock(productId, quantity, reason, orderId) {
+  return runInTransaction(async () => {
+    const product = await database.product.findUnique({ where: { id: productId }, select: { name: true, stock: true } });
+    if (!product) return 0;
+    const takenQuantity = Math.max(0, Math.min(product.stock, quantity));
+    if (!takenQuantity) return 0;
+    const bundleParts = await database.bundleItem.findMany({ where: { bundle_id: productId } });
+    if (bundleParts.length) {
+      for (const part of bundleParts) {
+        const componentStockLeft = (await getStock(part.product_id)) - part.qty * takenQuantity;
+        await database.product.update({ where: { id: part.product_id }, data: { stock: componentStockLeft } });
+        await writeStockLog(part.product_id, -part.qty * takenQuantity, componentStockLeft, `набор «${product.name}»`, orderId);
+      }
+    } else {
+      await database.product.update({ where: { id: productId }, data: { stock: { decrement: takenQuantity } } });
+      await writeStockLog(productId, -takenQuantity, product.stock - takenQuantity, reason, orderId);
     }
-  } else {
-    db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(k, id);
-    log(id, -k, p.stock - k, reason, orderId);
-  }
-  syncBundles();
-  return k;
+    await syncBundles();
+    return takenQuantity;
+  });
 }
 
-// Вернуть n штук (отмена заказа)
-function give(id, n, reason, orderId) {
-  if (!n) return;
-  const parts = db.prepare('SELECT product_id, qty FROM bundle_items WHERE bundle_id = ?').all(id);
-  if (parts.length) {
-    for (const c of parts) {
-      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(c.qty * n, c.product_id);
-      log(c.product_id, c.qty * n, db.prepare('SELECT stock FROM products WHERE id = ?').get(c.product_id).stock, reason, orderId);
+// Вернуть quantity штук (отмена заказа)
+async function returnToStock(productId, quantity, reason, orderId) {
+  if (!quantity) return;
+  await runInTransaction(async () => {
+    const bundleParts = await database.bundleItem.findMany({ where: { bundle_id: productId } });
+    const returns = bundleParts.length
+      ? bundleParts.map((part) => ({ productId: part.product_id, quantity: part.qty * quantity }))
+      : [{ productId, quantity }];
+    for (const stockReturn of returns) {
+      const updatedProducts = await database.product.updateMany({ where: { id: stockReturn.productId }, data: { stock: { increment: stockReturn.quantity } } });
+      const stockAfter = updatedProducts.count ? await getStock(stockReturn.productId) : 0;
+      await writeStockLog(stockReturn.productId, stockReturn.quantity, stockAfter, reason, orderId);
     }
-  } else {
-    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(n, id);
-    log(id, n, db.prepare('SELECT stock FROM products WHERE id = ?').get(id)?.stock ?? 0, reason, orderId);
-  }
-  syncBundles();
+    await syncBundles();
+  });
 }
 
 // Состав набора: [{product_id, qty}]; пустой список — снять набор. Вложенные наборы и сам в себя запрещены.
-function setBundle(bundleId, parts) {
-  const clean = new Map();
-  for (const p of parts || []) {
-    const pid = parseInt(p.product_id, 10), qty = parseInt(p.qty, 10);
-    if (!pid || !(qty >= 1 && qty <= 1000)) throw Object.assign(new Error('В составе набора количество — целое число от 1'), { expose: true });
-    if (pid === bundleId) throw Object.assign(new Error('Набор не может входить сам в себя'), { expose: true });
-    const row = db.prepare('SELECT id FROM products WHERE id = ?').get(pid);
-    if (!row) throw Object.assign(new Error(`Товара #${pid} нет`), { expose: true });
-    if (isBundle(pid)) throw Object.assign(new Error('В набор нельзя класть другой набор'), { expose: true });
-    clean.set(pid, (clean.get(pid) || 0) + qty);
+async function setBundle(bundleId, requestedParts) {
+  const quantityByProductId = new Map();
+  for (const requestedPart of requestedParts || []) {
+    const partProductId = parseInt(requestedPart.product_id, 10);
+    const partQuantity = parseInt(requestedPart.qty, 10);
+    if (!partProductId || !(partQuantity >= 1 && partQuantity <= 1000)) throw userError('В составе набора количество — целое число от 1');
+    if (partProductId === bundleId) throw userError('Набор не может входить сам в себя');
+    if (!(await database.product.findUnique({ where: { id: partProductId }, select: { id: true } }))) throw userError(`Товара #${partProductId} нет`);
+    if (await isBundle(partProductId)) throw userError('В набор нельзя класть другой набор');
+    quantityByProductId.set(partProductId, (quantityByProductId.get(partProductId) || 0) + partQuantity);
   }
-  if (clean.size > 20) throw Object.assign(new Error('В наборе не больше 20 позиций'), { expose: true });
-  db.transaction(() => {
-    db.prepare('DELETE FROM bundle_items WHERE bundle_id = ?').run(bundleId);
-    for (const [pid, qty] of clean) db.prepare('INSERT INTO bundle_items (bundle_id, product_id, qty) VALUES (?,?,?)').run(bundleId, pid, qty);
-    syncBundles();
-  })();
+  if (quantityByProductId.size > MAX_BUNDLE_PARTS) throw userError(`В наборе не больше ${MAX_BUNDLE_PARTS} позиций`);
+  await runInTransaction(async () => {
+    await database.bundleItem.deleteMany({ where: { bundle_id: bundleId } });
+    if (quantityByProductId.size) {
+      await database.bundleItem.createMany({
+        data: [...quantityByProductId].map(([partProductId, partQuantity]) => ({ bundle_id: bundleId, product_id: partProductId, qty: partQuantity })),
+      });
+    }
+    await syncBundles();
+  });
 }
-const bundleOf = (id) => db.prepare(`SELECT b.product_id, b.qty, p.name FROM bundle_items b JOIN products p ON p.id = b.product_id WHERE b.bundle_id = ? ORDER BY p.name`).all(id);
 
-module.exports = { setStock, take, give, syncBundles, setBundle, bundleOf, isBundle, log };
+// Состав набора с названиями: [{product_id, qty, name}], по алфавиту
+async function getBundleParts(bundleId) {
+  const bundleParts = await database.bundleItem.findMany({ where: { bundle_id: bundleId } });
+  const products = await database.product.findMany({ where: { id: { in: bundleParts.map((part) => part.product_id) } }, select: { id: true, name: true } });
+  const nameByProductId = new Map(products.map((product) => [product.id, product.name]));
+  return bundleParts
+    .filter((part) => nameByProductId.has(part.product_id))
+    .map((part) => ({ product_id: part.product_id, qty: part.qty, name: nameByProductId.get(part.product_id) }))
+    .sort((first, second) => first.name.localeCompare(second.name));
+}
 
-try { syncBundles(); } catch { /* таблица составов появится при первой миграции */ }
+// id всех наборов — чтобы не спрашивать базу по каждому товару в списках
+async function getBundleIds() {
+  const bundleParts = await database.bundleItem.findMany({ select: { bundle_id: true } });
+  return new Set(bundleParts.map((part) => part.bundle_id));
+}
+
+module.exports = { setStock, takeFromStock, returnToStock, syncBundles, setBundle, getBundleParts, getBundleIds, isBundle, writeStockLog };
