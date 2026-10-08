@@ -1,9 +1,10 @@
 // Админка: список заказов и смена статуса
 const express = require('express');
-const { database } = require('../../database');
-const orders = require('../../orders');
-const customers = require('../../customers');
-const { asyncHandler } = require('../async-handler');
+const { database } = require('../../../database');
+const orders = require('../../../orders');
+const customers = require('../../../customers');
+const { asyncHandler } = require('../../async-handler');
+const { orderStatusValidator } = require('./validation');
 
 const ADMIN_ORDERS_LIMIT = 150;
 
@@ -28,12 +29,10 @@ function createAdminOrdersRouter({ bot, ownerAuth }) {
     response.json({ orders: ordersForAdmin });
   }));
 
-  router.post('/orders/:id/status', ...ownerAuth, asyncHandler(async (request, response) => {
-    const newStatus = String(request.body.status || '');
-    if (!orders.PAID_STATUSES.has(newStatus) && newStatus !== 'cancelled') return response.status(400).json({ error: 'Неизвестный статус' });
+  router.post('/orders/:id/status', ...ownerAuth, orderStatusValidator, asyncHandler(async (request, response) => {
+    const { orderId, newStatus, statusOptions } = request.validated;
     try {
-      const statusOptions = request.body.track !== undefined ? { track: request.body.track } : {};
-      const updatedOrder = await orders.changeStatus(bot, parseInt(request.params.id, 10), newStatus, statusOptions);
+      const updatedOrder = await orders.changeStatus(bot, orderId, newStatus, statusOptions);
       return response.json({ ok: true, status: updatedOrder.base, track: updatedOrder.track || '' });
     } catch (statusError) {
       return response.status(400).json({ error: statusError.message });

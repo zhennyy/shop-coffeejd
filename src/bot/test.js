@@ -1,7 +1,7 @@
 // Бот в чате: прогоняем настоящие обработчики через подставной Telegram (без сети)
 const { test, before } = require('node:test');
 const assert = require('node:assert/strict');
-const helpers = require('./helpers');
+const testHelpers = require('../server/test-helpers');
 
 const OWNER_ID = 1001;
 const BUYER_ID = 7392580260; // настоящие id Telegram бывают длиннее 32 бит
@@ -45,8 +45,8 @@ function pressButton(chatId, callbackData) {
 }
 
 before(async () => {
-  shop = await helpers.start();
-  ({ bot } = require('../src/bot'));
+  shop = await testHelpers.start();
+  ({ bot } = require('./index'));
   bot.botInfo = { id: 1, is_bot: true, first_name: 'CoFFeeJD', username: 'coffeejd_test_bot' };
   // каждый апдейт Telegraf обрабатывает со своим экземпляром Telegram — подменяем запросы у всех сразу
   require('telegraf').Telegram.prototype.callApi = async function fakeCallApi(method, payload) {

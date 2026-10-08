@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test --test-force-exit test/*.test.js",
+    "test": "node --test --test-force-exit \"src/**/test.js\"",
     "postinstall": "node scripts/generate-prisma-client.js",
     "db:generate": "node scripts/generate-prisma-client.js"
   },

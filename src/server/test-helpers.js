@@ -1,4 +1,4 @@
-// Общая обвязка тестов: временная база, подставные ЮKassa/Telegram/геокодер, подписанные запросы витрины.
+// Общая обвязка тестов (файлы test.js рядом с кодом): временная база, подставные ЮKassa/Telegram/геокодер, подписанные запросы витрины.
 const crypto = require('node:crypto');
 const path = require('node:path');
 const os = require('node:os');
@@ -48,9 +48,9 @@ function initData(userId, extraFields = {}) {
 }
 
 async function start() {
-  const { initializeDatabase } = require('../src/database/initialize');
+  const { initializeDatabase } = require('../database/initialize');
   await initializeDatabase();
-  const { startWebhookServer } = require('../src/server');
+  const { startWebhookServer } = require('./index');
   startWebhookServer(fakeBot, { aiPick: async () => ({ advice: '', ids: [] }) });
   await new Promise((resolve) => setTimeout(resolve, 400));
   const baseUrl = `http://127.0.0.1:${process.env.WEBHOOK_PORT}`;
@@ -59,7 +59,47 @@ async function start() {
     headers: { 'Content-Type': 'application/json', ...(userId ? { 'X-Init-Data': initData(userId) } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).then(async (response) => ({ status: response.status, body: await response.json().catch(() => ({})) }));
-  const { database } = require('../src/database');
+  const { database } = require('../database');
   return { base: baseUrl, call, payments, sent: sentMessages, bot: fakeBot, database };
 }
-module.exports = { start, payments, sent: sentMessages, bot: fakeBot, initData };
+
+const OWNER_ID = 1001;
+const lastPayment = () => [...payments.values()].pop();
+
+// Частые действия в тестах: работают с уже запущенным магазином (результат start())
+function createShopActions(shop) {
+  const setCart = async (chatId, productQuantities) => {
+    for (const [productId, quantity] of productQuantities) {
+      const response = await shop.call(chatId, 'POST', '/shop-api/cart', { product_id: productId, qty: quantity });
+      if (response.status !== 200) throw new Error(`корзина: ${response.status} ${JSON.stringify(response.body)}`);
+    }
+  };
+  const clearCart = (chatId) => shop.database.cartItem.deleteMany({ where: { chat_id: chatId } });
+  // Оформить самовывоз из указанных товаров (корзину перед этим очищаем)
+  const buy = async (chatId, productQuantities) => {
+    await clearCart(chatId);
+    await setCart(chatId, productQuantities);
+    return shop.call(chatId, 'POST', '/shop-api/order', { delivery: 'pickup', phone: '89001234567' });
+  };
+  const sendPaymentWebhook = (paymentId) => fetch(shop.base + '/yookassa-webhook', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'payment.succeeded', object: { id: paymentId } }),
+  });
+  // ЮKassa подтверждает последний созданный платёж
+  const payLastOrder = async () => {
+    const payment = lastPayment();
+    payment.status = 'succeeded';
+    await sendPaymentWebhook(payment.id);
+    return payment;
+  };
+  const createProduct = async (productForm) => {
+    const response = await shop.call(OWNER_ID, 'POST', '/shop-api/admin/products', productForm);
+    if (response.status !== 200) throw new Error(`товар не создан: ${JSON.stringify(response.body)}`);
+    return response.body.id;
+  };
+  const productsInStock = () => shop.database.product.findMany({ where: { stock: { gt: 5 } }, select: { id: true, price: true, stock: true }, orderBy: { id: 'asc' } });
+  const findProduct = (productId) => shop.database.product.findUnique({ where: { id: productId } });
+  const findOrder = (orderId) => shop.database.order.findUnique({ where: { id: orderId } });
+  return { setCart, clearCart, buy, sendPaymentWebhook, payLastOrder, createProduct, productsInStock, findProduct, findOrder, lastPayment };
+}
+
+module.exports = { start, payments, sent: sentMessages, bot: fakeBot, initData, createShopActions, lastPayment, OWNER_ID };

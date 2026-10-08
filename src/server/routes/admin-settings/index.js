@@ -1,31 +1,32 @@
 // Админка: статистика, чаты с покупателями, настройки доставки, города, промокоды
 const express = require('express');
 const axios = require('axios');
-const { database, toSqliteTimestamp } = require('../../database');
-const orders = require('../../orders');
-const customers = require('../../customers');
-const delivery = require('../../delivery');
-const receipt = require('../../payments/receipt');
-const messages = require('../../chat/messages');
-const { sendToBuyer } = require('../../chat');
-const { getDeliverySettings, setSetting } = require('../../settings');
-const { asyncHandler, userError } = require('../async-handler');
+const { database, toSqliteTimestamp } = require('../../../database');
+const orders = require('../../../orders');
+const customers = require('../../../customers');
+const delivery = require('../../../delivery');
+const receipt = require('../../../payments/receipt');
+const messages = require('../../../chat/messages');
+const { sendToBuyer } = require('../../../chat');
+const { getDeliverySettings, setSetting } = require('../../../settings');
+const { asyncHandler } = require('../../async-handler');
+const { idParamValidator } = require('../../validation');
+const {
+  statsValidator, chatIdValidator, chatMessageValidator, deliverySettingsValidator, deliveryOptionsValidator,
+  cityValidator, promoCodeValidator, promoToggleValidator,
+} = require('./validation');
 
-const STATS_PERIODS = [7, 30, 90];
 const DAY_MS = 864e5;
 const MOSCOW_OFFSET_MS = 3 * 3600e3;
 const TOP_LIST_SIZE = 6;
 const CHAT_ORDERS_LIMIT = 10;
-const MAX_CARRIERS = 6;
 const LOW_STOCK_PIECES = 3;
 const ACTIVE_STATUSES = ['paid', 'assembling', 'shipped'];
 
-const toKopecks = (value) => Math.round(parseFloat(String(value ?? '').replace(',', '.').replace(/\s/g, '')) * 100);
 // «2026-10-08 21:30:00» (UTC) → дата по Москве «2026-10-09»
 const moscowDay = (sqliteTimestamp) => new Date(new Date(String(sqliteTimestamp).replace(' ', 'T') + 'Z').getTime() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
-async function buildStats(requestedDays) {
-  const days = STATS_PERIODS.includes(Number(requestedDays)) ? Number(requestedDays) : 30;
+async function buildStats(days) {
   const todayInMoscow = new Date(Date.now() + MOSCOW_OFFSET_MS);
   const firstDay = new Date(todayInMoscow - (days - 1) * DAY_MS).toISOString().slice(0, 10);
   // created_at — UTC; дни считаем по Москве (+3 ч)
@@ -122,12 +123,12 @@ function createAdminSettingsRouter({ bot, ownerAuth }) {
   });
 
   // ───────── 📊 Статистика ─────────
-  router.get('/stats', ...ownerAuth, jsonRoute((request) => buildStats(request.query.days)));
+  router.get('/stats', ...ownerAuth, statsValidator, jsonRoute((request) => buildStats(request.validated.days)));
 
   // ───────── 💬 Чаты ─────────
   router.get('/chats', ...ownerAuth, jsonRoute(async () => ({ chats: await messages.listChats(), unread: await messages.countUnread() })));
-  router.get('/chats/:chatId', ...ownerAuth, jsonRoute(async (request) => {
-    const chatId = Number(request.params.chatId);
+  router.get('/chats/:chatId', ...ownerAuth, chatIdValidator, jsonRoute(async (request) => {
+    const { chatId } = request.validated;
     await messages.markChatRead(chatId);
     const buyerOrders = await database.order.findMany({
       where: { chat_id: chatId }, orderBy: { id: 'desc' }, take: CHAT_ORDERS_LIMIT, select: { id: true, order_code: true, status: true, total: true },
@@ -139,10 +140,8 @@ function createAdminSettingsRouter({ bot, ownerAuth }) {
       unread: await messages.countUnread(),
     };
   }));
-  router.post('/chats/:chatId', ...ownerAuth, jsonRoute(async (request) => {
-    const chatId = Number(request.params.chatId);
-    const text = String(request.body?.text ?? '').trim().slice(0, 4000);
-    if (!text) throw new Error('Пустое сообщение');
+  router.post('/chats/:chatId', ...ownerAuth, chatMessageValidator, jsonRoute(async (request) => {
+    const { chatId, text } = request.validated;
     const hasWrittenBefore = (await database.message.count({ where: { chat_id: chatId } })) > 0 || (await database.order.count({ where: { chat_id: chatId } })) > 0;
     if (!hasWrittenBefore) throw new Error('Этот покупатель ещё не писал магазину');
     try {
@@ -168,87 +167,60 @@ function createAdminSettingsRouter({ bot, ownerAuth }) {
   // ───────── ⚙️ Настройки доставки ─────────
   router.get('/settings', ...ownerAuth, jsonRoute(buildSettings));
 
-  router.post('/delivery', ...ownerAuth, jsonRoute(async (request) => {
-    const form = request.body || {};
-    const otherPrice = toKopecks(form.otherPrice);
-    const freeFrom = form.freeFrom === '' || form.freeFrom == null ? 0 : toKopecks(form.freeFrom);
-    if (!(otherPrice >= 0)) throw new Error('Цена для других городов — числом');
-    if (!(freeFrom >= 0)) throw new Error('«Бесплатно от» — числом (0 — выключено)');
-    await setSetting('delivery', { otherPrice, freeFrom, pickup: Boolean(form.pickup), pickupAddress: String(form.pickupAddress || '').trim().slice(0, 200) });
+  router.post('/delivery', ...ownerAuth, deliverySettingsValidator, jsonRoute(async (request) => {
+    await setSetting('delivery', request.validated.deliverySettings);
     return buildSettings();
   }));
 
   // СДЭК / Почта и доставка по расстоянию
-  router.post('/delivery2', ...ownerAuth, jsonRoute(async (request) => {
-    const form = request.body || {};
+  router.post('/delivery2', ...ownerAuth, deliveryOptionsValidator, jsonRoute(async (request) => {
+    const { postEnabled, carriers, distanceEnabled, distanceTiers, originAddress } = request.validated;
     const currentOptions = await delivery.getDeliveryOptions();
-    const carriers = (Array.isArray(form.carriers) ? form.carriers : currentOptions.post.carriers).slice(0, MAX_CARRIERS).map((carrierForm) => {
-      const price = toKopecks(carrierForm.price);
-      if (!(price >= 0)) throw new Error(`Цена «${carrierForm.name}» — числом`);
-      const carrierId = String(carrierForm.id || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 20) || 'c' + Math.random().toString(36).slice(2, 6);
-      return { id: carrierId, name: String(carrierForm.name || '').trim().slice(0, 40), price };
-    }).filter((carrier) => carrier.name);
-    const distanceOptions = { ...currentOptions.distance, enabled: Boolean(form.distanceEnabled) };
-    if (form.tiers !== undefined) {
-      distanceOptions.tiers = delivery.parseDistanceTiers(form.tiers);
-      if (!distanceOptions.tiers.length) throw new Error('Добавьте хотя бы одну ступень расстояния');
-    }
-    const originAddress = String(form.originAddress || '').trim().slice(0, 200);
+    const distanceOptions = { ...currentOptions.distance, enabled: distanceEnabled, ...(distanceTiers ? { tiers: distanceTiers } : {}) };
     if (originAddress && originAddress !== currentOptions.distance.origin.address) {
       const originPoint = await delivery.geocode(originAddress).catch(() => null);
       if (!originPoint) throw new Error('Не нашла этот адрес на карте. Напишите город, улицу и дом полностью');
       distanceOptions.origin = { address: originAddress, lat: originPoint.lat, lon: originPoint.lon };
     }
     if (distanceOptions.enabled && distanceOptions.origin.lat == null) throw new Error('Для доставки по расстоянию укажите адрес, откуда вы отправляете');
-    await delivery.saveDeliveryOptions({ post: { enabled: Boolean(form.postEnabled), carriers }, distance: distanceOptions });
+    await delivery.saveDeliveryOptions({ post: { enabled: postEnabled, carriers: carriers ?? currentOptions.post.carriers }, distance: distanceOptions });
     return buildSettings();
   }));
 
-  router.post('/cities', ...ownerAuth, jsonRoute(async (request) => {
-    const form = request.body || {};
-    const city = String(form.city || '').trim().slice(0, 80);
-    const price = toKopecks(form.price);
-    if (city.length < 2) throw new Error('Укажите город');
-    if (!(price >= 0)) throw new Error('Укажите цену доставки');
-    const rateId = parseInt(form.id, 10);
+  router.post('/cities', ...ownerAuth, cityValidator, jsonRoute(async (request) => {
+    const { rateId, city, price, isActive } = request.validated;
     if (rateId) {
-      // city в базе с COLLATE NOCASE — «москва» и «Москва» считаются одним городом
+      // city в базе с COLLATE NOCASE — «Moscow» и «moscow» считаются одним городом
       const sameNameRate = await database.deliveryRate.findFirst({ where: { city, id: { not: rateId } }, select: { id: true } });
       if (sameNameRate) throw new Error('Такой город уже есть');
-      await database.deliveryRate.update({ where: { id: rateId }, data: { city, price, active: form.active === false ? 0 : 1 } });
+      await database.deliveryRate.update({ where: { id: rateId }, data: { city, price, active: isActive ? 1 : 0 } });
     } else {
       await database.deliveryRate.upsert({ where: { city }, create: { city, price }, update: { price, active: 1 } });
     }
     return buildSettings();
   }));
-  router.post('/cities/:id/delete', ...ownerAuth, jsonRoute(async (request) => {
-    await database.deliveryRate.deleteMany({ where: { id: parseInt(request.params.id, 10) || 0 } });
+  router.post('/cities/:id/delete', ...ownerAuth, idParamValidator('rateId'), jsonRoute(async (request) => {
+    await database.deliveryRate.deleteMany({ where: { id: request.validated.rateId } });
     return buildSettings();
   }));
 
   // ───────── 🎟 Промокоды ─────────
-  router.post('/promos', ...ownerAuth, jsonRoute(async (request) => {
-    const form = request.body || {};
-    const code = String(form.code || '').trim().toUpperCase().replace(/\s+/g, '').slice(0, 30);
-    const percent = parseInt(form.percent, 10);
-    const maxUses = form.max_uses === '' || form.max_uses == null ? null : parseInt(form.max_uses, 10);
-    if (!/^[A-ZА-ЯЁ0-9_-]{2,30}$/.test(code)) throw new Error('Код — буквы и цифры, от 2 символов');
-    if (!(percent >= 1 && percent <= 90)) throw new Error('Скидка — от 1 до 90%');
-    if (maxUses !== null && !(maxUses >= 1)) throw new Error('Лимит — число от 1 (или пусто — без лимита)');
+  router.post('/promos', ...ownerAuth, promoCodeValidator, jsonRoute(async (request) => {
+    const { code, discountPercent, maxUses } = request.validated;
     try {
-      await database.promoCode.create({ data: { code, discount_percent: percent, max_uses: maxUses } });
+      await database.promoCode.create({ data: { code, discount_percent: discountPercent, max_uses: maxUses } });
     } catch (createError) {
-      if (createError.code === 'P2002' || String(createError.message).includes('UNIQUE')) throw userError(`Промокод ${code} уже есть`);
+      if (createError.code === 'P2002' || String(createError.message).includes('UNIQUE')) throw new Error(`Промокод ${code} уже есть`);
       throw createError;
     }
     return buildSettings();
   }));
-  router.post('/promos/:id', ...ownerAuth, jsonRoute(async (request) => {
-    await database.promoCode.updateMany({ where: { id: parseInt(request.params.id, 10) || 0 }, data: { active: request.body?.active ? 1 : 0 } });
+  router.post('/promos/:id', ...ownerAuth, promoToggleValidator, jsonRoute(async (request) => {
+    await database.promoCode.updateMany({ where: { id: request.validated.promoId }, data: { active: request.validated.isActive ? 1 : 0 } });
     return buildSettings();
   }));
-  router.post('/promos/:id/delete', ...ownerAuth, jsonRoute(async (request) => {
-    await database.promoCode.deleteMany({ where: { id: parseInt(request.params.id, 10) || 0 } });
+  router.post('/promos/:id/delete', ...ownerAuth, idParamValidator('promoId'), jsonRoute(async (request) => {
+    await database.promoCode.deleteMany({ where: { id: request.validated.promoId } });
     return buildSettings();
   }));
 

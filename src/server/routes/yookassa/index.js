@@ -1,25 +1,21 @@
 // Вебхук ЮKassa (без авторизации — его вызывает сама ЮKassa). Уведомлению не верим на слово: переспрашиваем платёж у ЮKassa.
 const express = require('express');
-const { database } = require('../../database');
-const orders = require('../../orders');
-const { getPayment } = require('../../payments/yookassa');
-const { checkLowStock } = require('../../notifications');
-const { asyncHandler } = require('../async-handler');
+const { database } = require('../../../database');
+const orders = require('../../../orders');
+const { getPayment } = require('../../../payments/yookassa');
+const { checkLowStock } = require('../../../notifications');
+const { asyncHandler } = require('../../async-handler');
+const { paymentSucceededValidator } = require('./validation');
 
 const OUR_APP_ID = 'coffeejdbot';
-const PAYMENT_ID_PATTERN = /^[\w-]{1,64}$/;
 
 function createYookassaRouter({ bot }) {
   const router = express.Router();
 
-  router.post('/yookassa-webhook', asyncHandler(async (request, response) => {
-    const event = request.body;
-    const isPaymentSucceeded = event && event.event === 'payment.succeeded' && event.object && PAYMENT_ID_PATTERN.test(String(event.object.id));
-    if (!isPaymentSucceeded) return response.sendStatus(200);
-
+  router.post('/yookassa-webhook', paymentSucceededValidator, asyncHandler(async (request, response) => {
     let payment;
     try {
-      payment = await getPayment(event.object.id);
+      payment = await getPayment(request.validated.paymentId);
     } catch (paymentError) {
       console.error('ЮKassa: не удалось проверить платёж', paymentError.message);
       return response.sendStatus(500); // ЮKassa повторит уведомление позже

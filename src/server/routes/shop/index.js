@@ -1,21 +1,22 @@
 // Витрина для покупателя: каталог, корзина, язык, мои заказы, AI-подбор, повтор заказа, подписки
 const express = require('express');
-const { database } = require('../../database');
-const { translate } = require('../../i18n');
-const cart = require('../../cart');
-const orders = require('../../orders');
-const customers = require('../../customers');
-const subscriptions = require('../../subscriptions');
-const quantityRules = require('../../inventory/quantity');
-const { getPayment } = require('../../payments/yookassa');
-const { countUnread } = require('../../chat/messages');
-const { isOwnerChat } = require('../auth');
-const { showcasePhotoUrl } = require('../photos');
-const { asyncHandler } = require('../async-handler');
+const { database } = require('../../../database');
+const { translate } = require('../../../i18n');
+const cart = require('../../../cart');
+const orders = require('../../../orders');
+const customers = require('../../../customers');
+const subscriptions = require('../../../subscriptions');
+const quantityRules = require('../../../inventory/quantity');
+const { getPayment } = require('../../../payments/yookassa');
+const { countUnread } = require('../../../chat/messages');
+const { isOwnerChat } = require('../../auth');
+const { showcasePhotoUrl } = require('../../photos');
+const { asyncHandler } = require('../../async-handler');
+const { idParamValidator } = require('../../validation');
+const { cartPostValidator, languagePostValidator, aiPostValidator, subscriptionPostValidator, subscriptionUpdateValidator } = require('./validation');
 
 const MY_ORDERS_LIMIT = 20;
 const AI_REQUEST_INTERVAL_MS = 5000;
-const MAX_AI_QUERY_LENGTH = 500;
 const MAX_TRACKED_USERS = 5000;
 
 const CATALOG_FIELDS = {
@@ -94,10 +95,9 @@ function createShopRouter({ shopAuth, aiPick, showCartFor }) {
     });
   }));
 
-  router.post('/cart', shopAuth, asyncHandler(async (request, response) => {
-    const productId = parseInt(request.body.product_id, 10);
-    const quantity = Math.max(0, parseInt(request.body.qty, 10) || 0);
-    const product = await database.product.findUnique({ where: { id: productId || 0 }, select: { stock: true, unit: true, step: true, min_qty: true } });
+  router.post('/cart', shopAuth, cartPostValidator, asyncHandler(async (request, response) => {
+    const { productId, quantity } = request.validated;
+    const product = await database.product.findUnique({ where: { id: productId }, select: { stock: true, unit: true, step: true, min_qty: true } });
     if (!product) return response.status(404).json({ error: 'Товар не найден' });
     if (quantity > product.stock) return response.status(400).json({ error: 'Больше нет в наличии' });
     if (!quantityRules.isValidQuantity(product, quantity)) {
@@ -108,8 +108,8 @@ function createShopRouter({ shopAuth, aiPick, showCartFor }) {
   }));
 
   // Язык интерфейса (переключатель RU/EN в шапке витрины)
-  router.post('/lang', shopAuth, asyncHandler(async (request, response) => {
-    const language = request.body.lang === 'en' ? 'en' : 'ru';
+  router.post('/lang', shopAuth, languagePostValidator, asyncHandler(async (request, response) => {
+    const { language } = request.validated;
     await customers.setLanguage(request.chatId, language);
     response.json({ ok: true, lang: language });
   }));
@@ -121,9 +121,8 @@ function createShopRouter({ shopAuth, aiPick, showCartFor }) {
 
   // AI-подбор: совет + id подходящих товаров (не чаще раза в 5 секунд на человека)
   const lastAiRequestAt = new Map();
-  router.post('/ai', shopAuth, asyncHandler(async (request, response) => {
-    const query = String(request.body.query || '').trim().slice(0, MAX_AI_QUERY_LENGTH);
-    if (!query) return response.status(400).json({ error: 'Опишите, что нужно подобрать' });
+  router.post('/ai', shopAuth, aiPostValidator, asyncHandler(async (request, response) => {
+    const { query } = request.validated;
     if (!aiPick) return response.status(503).json({ error: 'AI-подбор сейчас недоступен' });
     if (Date.now() - (lastAiRequestAt.get(request.chatId) || 0) < AI_REQUEST_INTERVAL_MS) return response.status(429).json({ error: 'Секунду, ещё думаю над прошлым запросом' });
     if (lastAiRequestAt.size > MAX_TRACKED_USERS) lastAiRequestAt.clear();
@@ -140,8 +139,8 @@ function createShopRouter({ shopAuth, aiPick, showCartFor }) {
   }));
 
   // Повторить заказ: собрать корзину из прошлого заказа с учётом остатков
-  router.post('/orders/:id/repeat', shopAuth, asyncHandler(async (request, response) => {
-    const order = await database.order.findFirst({ where: { id: parseInt(request.params.id, 10) || 0, chat_id: request.chatId }, select: { id: true } });
+  router.post('/orders/:id/repeat', shopAuth, idParamValidator('orderId'), asyncHandler(async (request, response) => {
+    const order = await database.order.findFirst({ where: { id: request.validated.orderId, chat_id: request.chatId }, select: { id: true } });
     if (!order) return response.status(404).json({ error: 'Заказ не найден' });
     const orderItems = (await orders.getOrderItems([order.id])).filter((orderItem) => orderItem.stock !== null); // удалённые товары пропускаем
     let addedCount = 0;
@@ -160,22 +159,23 @@ function createShopRouter({ shopAuth, aiPick, showCartFor }) {
     const language = await customers.getLanguage(request.chatId);
     response.json({ subscriptions: await subscriptions.listSubscriptions(request.chatId, language), intervals: subscriptions.INTERVALS });
   }));
-  router.post('/subscriptions', shopAuth, asyncHandler(async (request, response) => {
+  router.post('/subscriptions', shopAuth, subscriptionPostValidator, asyncHandler(async (request, response) => {
     try {
-      const subscriptionId = await subscriptions.createSubscription(request.chatId, parseInt(request.body.order_id, 10), parseInt(request.body.days, 10));
+      const subscriptionId = await subscriptions.createSubscription(request.chatId, request.validated.orderId, request.validated.intervalDays);
       response.json({ ok: true, id: subscriptionId });
     } catch (subscriptionError) { sendUserError(response, subscriptionError); }
   }));
-  router.post('/subscriptions/:id', shopAuth, asyncHandler(async (request, response) => {
+  router.post('/subscriptions/:id', shopAuth, subscriptionUpdateValidator, asyncHandler(async (request, response) => {
+    const { subscriptionId, action, days } = request.validated;
     try {
-      await subscriptions.updateSubscription(request.chatId, parseInt(request.params.id, 10), { action: String(request.body.action || ''), days: parseInt(request.body.days, 10) });
+      await subscriptions.updateSubscription(request.chatId, subscriptionId, { action, days });
       response.json({ ok: true });
     } catch (subscriptionError) { sendUserError(response, subscriptionError); }
   }));
 
   // Ссылка «Оплатить» для заказа, который ещё ждёт оплату
-  router.post('/orders/:id/pay', shopAuth, asyncHandler(async (request, response) => {
-    const order = await database.order.findFirst({ where: { id: parseInt(request.params.id, 10) || 0, chat_id: request.chatId } });
+  router.post('/orders/:id/pay', shopAuth, idParamValidator('orderId'), asyncHandler(async (request, response) => {
+    const order = await database.order.findFirst({ where: { id: request.validated.orderId, chat_id: request.chatId } });
     const paymentId = order && String(order.status || '').startsWith('awaiting_payment:') ? order.status.split(':')[1] : null;
     if (!paymentId) return response.status(404).json({ error: 'Этот заказ уже не ждёт оплату' });
     try {

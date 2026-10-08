@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { buildReceipt, contactFrom, normalizePhone } = require('../src/payments/receipt');
+const { buildReceipt, contactFrom, normalizePhone } = require('./receipt');
 
 const receiptSum = (fiscalReceipt) => fiscalReceipt.items.reduce(
   (sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)), 0);
