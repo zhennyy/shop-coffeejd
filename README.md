@@ -22,22 +22,24 @@ npm install
 npm start
 ```
 
-Переменные окружения (задаются в `.env` локально или в Variables на Railway; значения в репозиторий не кладём):
+Переменные окружения (задаются в `.env`; на сервере — командой `bfa env coffeebot`; значения в репозиторий не кладём):
 
 | Переменная | Что это |
 |---|---|
 | `BOT_TOKEN` | токен от @BotFather |
 | `BOT_USERNAME` | username бота без @ |
 | `OWNER_CHAT_ID` | числовой id владельца |
-| `DB_PATH` | путь к базе, на Railway `/data/shop.db` |
+| `DB_PATH` | путь к базе, на сервере `/data/coffeebot/shop.db` |
 | `PUBLIC_URL`, `SHOP_URL` | адрес сервиса и ссылка на мини-приложение (`PUBLIC_URL` + `/shop/`) |
 | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | данные ЮKassa, если нужна онлайн-оплата |
 | `YOOKASSA_RECEIPTS` | `on`, чтобы формировать чеки 54-ФЗ (сначала уточните у бухгалтера) |
 | `CRM_URL`, `CRM_SECRET`, `CRM_SOURCE` | только для подключения CRM |
 
-Webhook ЮKassa: `PUBLIC_URL/yookassa-webhook`, событие `payment.succeeded`.
+| `TELEGRAM_API_ROOT`, `ANTHROPIC_BASE_URL` | посредники для Telegram и Claude, если сервер в России |
 
-Данные нужно хранить на постоянном диске (Volume на Railway), иначе заказы пропадут при перезапуске.
+Webhook ЮKassa: `https://botforall.ru/yookassa-webhook` (общий для всех магазинов на сервере; каждый бот проверяет платёж и берёт только свой), события `payment.succeeded` и `payment.canceled`.
+
+Работает 24/7 на своём сервере (VPS): код в `/opt/bots/coffeebot`, база и фото в `/data/coffeebot` — обновления (`bfa update`) их не трогают, каждую ночь делается резервная копия. Магазин: `https://coffee.botforall.ru/shop/`. Установка сервера — в [BotForAll/deploy/README.md](https://github.com/zhennyy/botforall/blob/main/deploy/README.md).
 
 ## Проверка
 
