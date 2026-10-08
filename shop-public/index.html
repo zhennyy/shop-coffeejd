@@ -380,8 +380,8 @@ const T = {
         cartTitle: 'Корзина', cartEmpty: 'Корзина пока пуста', toCatalog: 'Перейти в каталог',
         checkoutNote: 'Оплата картой или СБП через ЮKassa — безопасно.',
         ordersTitle: 'Мои заказы', ordersEmpty: 'Заказов пока нет', delivery: 'Доставка',
-        aiTitle: 'Подберём кофе', aiPh: 'Опишите комнату: площадь, где стоит, стиль, бюджет…', aiGo: 'Подобрать', aiWait: 'Подбираю',
-        aiHints: ['Ванная 5 м², хром, до 10 000 ₽', 'Гостиная 25 м², белый, вертикальный', 'Лофт, чёрный, большой'], aiNone: 'Под запрос ничего не нашлось — попробуйте описать иначе' },
+        aiTitle: 'Подберём кофе', aiPh: 'Расскажите, как завариваете и какой вкус любите, бюджет…', aiGo: 'Подобрать', aiWait: 'Подбираю',
+        aiHints: ['Для турки, без кислинки, до 1500 ₽', 'Эспрессо с шоколадными нотами', 'Фильтр, яркий и ягодный'], aiNone: 'Под запрос ничего не нашлось — попробуйте описать иначе' },
   en: { tCatalog: 'Catalog', tCart: 'Cart', tOrders: 'Orders', tAi: 'AI pick', tAdmin: 'Admin', all: 'All', search: 'Search coffee and tea',
         inStock: n => `In stock: ${n}`, low: n => `Only ${n} left`, out: 'Out of stock', empty: 'Nothing found',
         checkout: s => `Checkout · ${s}`, noMore: 'No more in stock', addBtn: 'Add to cart', from: 'from', variants: 'options', total: 'Total',
@@ -390,8 +390,8 @@ const T = {
         cartTitle: 'Cart', cartEmpty: 'Your cart is empty', toCatalog: 'Go to catalog',
         checkoutNote: 'Pay by card or SBP via ЮKassa — secure.',
         ordersTitle: 'My orders', ordersEmpty: 'No orders yet', delivery: 'Delivery',
-        aiTitle: 'Find your coffee', aiPh: 'Describe the room: size, placement, style, budget…', aiGo: 'Find', aiWait: 'Thinking',
-        aiHints: ['Bathroom 5 m², chrome, under 10 000 ₽', 'Living room 25 m², white, vertical', 'Loft, black, large'], aiNone: 'Nothing matched — try describing it differently' },
+        aiTitle: 'Find your coffee', aiPh: 'Tell us how you brew, what taste you like, budget…', aiGo: 'Find', aiWait: 'Thinking',
+        aiHints: ['Cezve, low acidity, under 1500 ₽', 'Espresso with chocolate notes', 'Filter, bright and berry'], aiNone: 'Nothing matched — try describing it differently' },
 };
 let lang = 'ru', L = T.ru;
 let products = [], cart = {}, cat = null, query = '', tab = 'catalog', orders = null;
