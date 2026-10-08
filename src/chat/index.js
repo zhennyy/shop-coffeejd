@@ -3,8 +3,8 @@
 //  • владелица отвечает реплаем, кнопкой «💬 Написать» или из админки → ответ приходит покупателю;
 //  • кнопки статусов под уведомлением о новом заказе;
 //  • оценка ⭐ после доставки.
-const db = require('./db');
-const orders = require('./orders');
+const db = require('../database');
+const orders = require('../orders');
 
 const isOwnerId = (id) => Boolean(process.env.OWNER_CHAT_ID) && String(id) === String(process.env.OWNER_CHAT_ID);
 const esc = orders.esc;

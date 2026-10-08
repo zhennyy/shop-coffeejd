@@ -1,7 +1,7 @@
 // orders.js — жизнь заказа после оформления: статусы, уведомления покупателю и владелице, склад, оценки.
 // Используется и сервером витрины (webhook.js), и ботом (кнопки под уведомлением владелице).
-const db = require('./db');
-const inv = require('./inventory');
+const db = require('../database');
+const inv = require('../inventory');
 
 // Порядок статусов. «Деньги получены» — это всё, что начиная с paid (кроме отмены).
 const FLOW = ['paid', 'assembling', 'shipped', 'delivered'];
@@ -55,7 +55,7 @@ function tracker(o, lang) {
 }
 
 function itemsText(o, lang) {
-  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} ${i.unit ? '— ' + require('./qty').fmt(i, i.quantity, lang) : '× ' + i.quantity} — ${rub(i.price * i.quantity)}`);
+  const lines = o.items.map((i) => `${esc((lang === 'en' && i.name_en) || i.name || '—')} ${i.unit ? '— ' + require('../inventory/quantity').fmt(i, i.quantity, lang) : '× ' + i.quantity} — ${rub(i.price * i.quantity)}`);
   if (o.discount_percent) lines.push(`${lang === 'en' ? 'Promo' : 'Промокод'} ${esc(o.promo_code || '')} −${o.discount_percent}%`);
   if (!isPickup(o)) lines.push(`${lang === 'en' ? 'Delivery' : 'Доставка'} — ${o.delivery_cost ? rub(o.delivery_cost) : (lang === 'en' ? 'free' : 'бесплатно')}`);
   lines.push(`<b>${lang === 'en' ? 'Total' : 'Итого'} ${rub(o.total)}</b>`);
@@ -156,7 +156,7 @@ function takeStock(o) {
     if (need <= 0) continue;
     const take = inv.take(i.product_id, need, 'продажа', o.id);
     db.prepare('UPDATE order_items SET stock_taken = stock_taken + ? WHERE rowid = ?').run(take, i.rid);
-    if (take < need) short.push(`${i.name || 'товар'} — не хватило ${need - take} ${i.unit ? require('./qty').unitLabel(i) : 'шт.'}`);
+    if (take < need) short.push(`${i.name || 'товар'} — не хватило ${need - take} ${i.unit ? require('../inventory/quantity').unitLabel(i) : 'шт.'}`);
   }
   return short;
 }
@@ -192,7 +192,7 @@ async function changeStatus(bot, id, status, { track } = {}) {
       .run(status, newTrack, nowPaid ? 1 : 0, id);
   })();
   const updated = getOrder(id);
-  require('./crm').push(id);
+  require('../crm').push(id);
   await notifyBuyer(bot, updated);
   await warnShortage(bot, updated, short);
   return updated;
@@ -221,7 +221,7 @@ async function markPaid(bot, orderId, paymentId) {
   })();
   if (!done) return false;
   const paid = getOrder(orderId);
-  require('./crm').push(orderId);
+  require('../crm').push(orderId);
   await notifyBuyer(bot, paid);
   await notifyOwnerNew(bot, paid);
   await warnShortage(bot, paid, short);

@@ -1,12 +1,12 @@
 // scenes/checkout.js
 const { Scenes, Markup } = require('telegraf');
-const db = require('../db');
-const { getCart } = require('../cart');
-const { t } = require('../i18n');
+const db = require('../../database');
+const { getCart } = require('../../cart');
+const { t } = require('../../i18n');
 
 // ищем тариф доставки по городу (без учёта регистра); если города нет в списке —
 // используем дефолтный тариф на "остальную Россию"
-const pricing = require('../pricing');
+const pricing = require('../../pricing');
 const getDeliveryPrice = (city) => pricing.deliveryPrice(city);
 
 function buildCityKeyboard(cityOptions, lang) {
@@ -118,7 +118,7 @@ const checkoutScene = new Scenes.WizardScene(
       const buyerName = db.getName(ctx.chat.id);
       let summary = buyerName ? `${t(lang, 'summaryGreeting', buyerName)}\n\n` : '';
       summary += `${t(lang, 'summaryAddress', ctx.wizard.state.address)}\n\n${t(lang, 'summaryOrderHeader')}\n`;
-      for (const i of items) summary += `${require('../qty').line(i, i.quantity, lang)}\n`;
+      for (const i of items) summary += `${require('../../inventory/quantity').line(i, i.quantity, lang)}\n`;
       summary += t(lang, 'itemsSum', (total / 100).toFixed(0) + ' ₽');
       if (discountPercent > 0) {
         summary += `\n${t(lang, 'promoLine', promoCode, discountPercent)}`;
@@ -195,8 +195,8 @@ checkoutScene.action('checkout_cancel', async (ctx) => {
 });
 
 checkoutScene.action('pay_yookassa', async (ctx) => {
-  const { startPayment } = require('../payments/start');
-  const receipt = require('../payments/receipt');
+  const { startPayment } = require('../../payments/start');
+  const receipt = require('../../payments/receipt');
   const lang = db.getLang(ctx.chat.id);
   await ctx.answerCbQuery();
   // чек 54-ФЗ: нужен телефон или e-mail. В чате их не спрашиваем — берём сохранённые из прошлых заказов в магазине
@@ -286,7 +286,7 @@ function createPendingOrder(
     'INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?,?,?,?)'
   );
   for (const i of items) insertItem.run(orderId, i.product_id, i.quantity, i.price);
-  require('../crm').push(orderId);
+  require('../../crm').push(orderId);
   return orderId;
 }
 

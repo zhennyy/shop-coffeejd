@@ -43,7 +43,7 @@ function initData(userId, extra = {}) {
 }
 
 async function start() {
-  const { startWebhookServer } = require('../webhook');
+  const { startWebhookServer } = require('../src/server');
   startWebhookServer(bot, { aiPick: async () => ({ advice: '', ids: [] }) });
   await new Promise((r) => setTimeout(r, 400));
   const base = `http://127.0.0.1:${process.env.WEBHOOK_PORT}`;
@@ -51,6 +51,6 @@ async function start() {
     method, headers: { 'Content-Type': 'application/json', ...(user ? { 'X-Init-Data': initData(user) } : {}), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
-  return { base, call, payments, sent, bot, db: require('../db') };
+  return { base, call, payments, sent, bot, db: require('../src/database') };
 }
 module.exports = { start, payments, sent, bot, initData };

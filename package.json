@@ -2,9 +2,9 @@
   "name": "coffeejd-coffee-bot",
   "version": "1.0.0",
   "private": true,
-  "main": "bot.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node bot.js",
+    "start": "node index.js",
     "test": "node --test --test-force-exit test/*.test.js"
   },
   "dependencies": {

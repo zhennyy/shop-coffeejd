@@ -2,23 +2,23 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const db = require('./db');
-const { checkLowStock } = require('./notify');
-const { t } = require('./i18n');
+const db = require('../database');
+const { checkLowStock } = require('../notifications');
+const { t } = require('../i18n');
 const crypto = require('crypto');
 const axios = require('axios');
-const inv = require('./inventory');
-const qty_ = require('./qty');
-const { getPayment } = require('./payments/yookassa');
-const orders = require('./orders');
-const { sendToBuyer } = require('./chat');
+const inv = require('../inventory');
+const qty_ = require('../inventory/quantity');
+const { getPayment } = require('../payments/yookassa');
+const orders = require('../orders');
+const { sendToBuyer } = require('../chat');
 
 // фото товаров храним рядом с базой — на сервере это /data/<бот>,
 // так что файлы переживают редеплой (в отличие от остальной файловой системы)
 const dbDir = path.dirname(path.resolve(process.env.DB_PATH || 'shop.db'));
 const uploadsDir = path.join(dbDir, 'uploads');
 // Фото товаров, которые лежат в самом проекте (видно в VS Code и на GitHub)
-const photosDir = path.join(__dirname, 'photos');
+const photosDir = path.join(__dirname, '..', '..', 'photos');
 fs.mkdirSync(uploadsDir, { recursive: true });
 
 // ===== Все фото товаров храним у себя: папка uploads рядом с базой (/data/<бот>/uploads) =====
@@ -102,7 +102,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   // === Витрина (мини-приложение Telegram): /shop + /shop-api ===
   // Покупатель открывает /shop внутри Telegram. Каждый запрос подписан Telegram (initData) —
   // проверяем подпись токеном бота, так что чужую корзину изменить нельзя.
-  app.use('/shop', express.static(path.join(__dirname, 'shop-public'), {
+  app.use('/shop', express.static(path.join(__dirname, '..', '..', 'shop-public'), {
     setHeaders: (res) => res.set('Cache-Control', 'no-cache'), // Telegram не держит старую версию витрины
   }));
 
@@ -374,11 +374,11 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   // Загрузка склада/каталога из Excel или CSV прямо из админки (или готовый пример чая)
   app.post('/shop-api/admin/stock-import', ...admP, express.json({ limit: '8mb' }), async (req, res) => {
     try {
-      const { importCsv, importXlsx, reportText } = require('./stock');
+      const { importCsv, importXlsx, reportText } = require('../inventory/import-export');
       const body = req.body || {};
       let r;
       if (body.sample === 'tea') {
-        r = await importXlsx(fs.readFileSync(path.join(__dirname, 'примеры', 'чай-10-сортов.xlsx')));
+        r = await importXlsx(fs.readFileSync(path.join(__dirname, '..', '..', 'примеры', 'чай-10-сортов.xlsx')));
       } else {
         const name = String(body.name || ''), b64 = String(body.data || '');
         if (!b64) return res.status(400).json({ error: 'Файл не получен' });
@@ -420,7 +420,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   app.post('/shop-api/admin/report', ...adm, async (req, res) => {
     try {
       const days = Math.min(366, Math.max(1, parseInt(req.body.days, 10) || 30));
-      const rep = require('./reports');
+      const rep = require('../reports');
       await bot.telegram.sendMessage(process.env.OWNER_CHAT_ID, rep.text(days));
       if (req.body.file) await bot.telegram.sendDocument(process.env.OWNER_CHAT_ID, { source: await rep.xlsx(days), filename: `otchet-${days}d.xlsx` });
       res.json({ ok: true });
@@ -468,7 +468,7 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   // Резервная копия: бот присылает владелице ZIP в чат (каталог, заказы, промокоды, доставка, фото)
   app.post('/shop-api/admin/backup', ...adm, async (req, res) => {
     try {
-      const { makeBackup } = require('./backup');
+      const { makeBackup } = require('../backup');
       const b = makeBackup({ uploadsDir, photosDir });
       await bot.telegram.sendDocument(req.chatId, { source: b.buffer, filename: b.filename },
         { caption: `📦 Резервная копия магазина\nФото: ${b.photos} · заказы и каталог — в Excel-файлах внутри.\nХраните у себя: там адреса покупателей.` });
@@ -509,15 +509,15 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
 
   // ===== Оформление и оплата прямо в витрине =====
   // Всё считаем на сервере: цены — из базы, доставка — из тарифов, скидка — из промокода.
-  const { createPendingOrder } = require('./scenes/checkout');
-  const pricing = require('./pricing');
-  const { getCart } = require('./cart');
+  const { createPendingOrder } = require('../bot/scenes/checkout');
+  const pricing = require('../pricing');
+  const { getCart } = require('../cart');
 
-  const delivery = require('./delivery');
-  const core = require('./checkout-core');
-  const receipt = require('./payments/receipt');
-  const subs = require('./subscriptions');
-  const { startPayment } = require('./payments/start');
+  const delivery = require('../delivery');
+  const core = require('../checkout');
+  const receipt = require('../payments/receipt');
+  const subs = require('../subscriptions');
+  const { startPayment } = require('../payments/start');
   const sendErr = (res, e, fallback = 'Что-то пошло не так, попробуйте ещё раз') => res.status(e.expose ? 400 : 500).json({ error: e.expose ? e.message : fallback });
 
   app.get('/shop-api/checkout-info', shopAuth, (req, res) => {
@@ -699,6 +699,14 @@ function startWebhookServer(bot, { showCartFor, aiPick } = {}) {
   // при старте и раз в 6 часов проверяем, что все фото лежат у нас
   setTimeout(localizeAllPhotos, 5000);
   setInterval(localizeAllPhotos, 6 * 3600 * 1000);
+
+  // Общий обработчик ошибок: наружу — короткий JSON, подробности — только в лог (без стека в браузере)
+  app.use((serverError, req, res, next) => {
+    console.error('Ошибка сервера:', req.method, req.path, serverError.message);
+    if (res.headersSent) return next(serverError);
+    const statusCode = serverError.status || serverError.statusCode || 500;
+    res.status(statusCode).json({ error: statusCode < 500 ? serverError.message : 'Ошибка сервера' });
+  });
 
   const port = process.env.WEBHOOK_PORT || 3001;
   app.listen(port, process.env.HOST || '127.0.0.1', () =>

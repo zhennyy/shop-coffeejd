@@ -1,8 +1,8 @@
 // checkout-core.js — общий расчёт доставки и цены для витрины и повторных заказов (одно правило в двух местах — меньше багов).
-const db = require('./db');
-const pricing = require('./pricing');
-const delivery = require('./delivery');
-const { t } = require('./i18n');
+const db = require('../database');
+const pricing = require('../pricing');
+const delivery = require('../delivery');
+const { t } = require('../i18n');
 
 const err = (m) => Object.assign(new Error(m), { expose: true });
 const METHODS = ['pickup', 'city', 'post', 'distance'];

@@ -1,7 +1,7 @@
 // pricing.js — единые правила цены для витрины и для оформления в чате:
 // доставка по городу, «другие города», бесплатно от суммы, промокоды.
 // Сравниваем названия в JS: SQLite COLLATE NOCASE не понимает русские буквы («москва» ≠ «Москва»).
-const db = require('./db');
+const db = require('../database');
 
 const norm = (s) => String(s || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 

@@ -5,13 +5,13 @@ let S;
 before(async () => { S = await h.start(); });
 
 test('SSRF: ссылки во внутреннюю сеть отклоняются', async () => {
-  const { assertPublicUrl } = require('../webhook');
+  const { assertPublicUrl } = require('../src/server');
   for (const u of ['https://127.0.0.1/a.jpg', 'https://localhost/a.jpg', 'https://169.254.169.254/latest', 'https://10.0.0.5/x', 'https://192.168.1.1/x', 'https://[::1]/x', 'https://172.16.0.1/x'])
     await assert.rejects(() => assertPublicUrl(u), undefined, u);
 });
 
 test('CSV: формулы экранируются при выгрузке и не портят названия при загрузке', () => {
-  const stock = require('../stock');
+  const stock = require('../src/inventory/import-export');
   S.db.prepare("INSERT INTO products (name, price, stock) VALUES ('=HYPERLINK(\"x\")', 100, 1)").run();
   const csv = stock.exportCsv();
   assert.match(csv, /'=HYPERLINK/);

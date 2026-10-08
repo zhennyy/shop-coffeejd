@@ -1,6 +1,6 @@
 // notify.js — предупреждение владелице, что товар заканчивается.
 // Пишем только когда список изменился, а не каждый час одно и то же.
-const db = require('./db');
+const db = require('../database');
 
 function checkLowStock(bot, threshold = 3) {
   const owner = process.env.OWNER_CHAT_ID;
@@ -11,8 +11,8 @@ function checkLowStock(bot, threshold = 3) {
   if (sig === db.getSetting('low_stock_sig', '')) return;
   db.setSetting('low_stock_sig', sig);
   if (!low.length) return;
-  const text = low.map((p) => (p.stock <= 0 ? `⛔️ ${p.name} — закончился` : `⚠️ ${p.name} — осталось ${p.stock} ${p.unit ? require('./qty').unitLabel(p) : 'шт.'}`)).join('\n');
-  const { shopUrl } = require('./orders');
+  const text = low.map((p) => (p.stock <= 0 ? `⛔️ ${p.name} — закончился` : `⚠️ ${p.name} — осталось ${p.stock} ${p.unit ? require('../inventory/quantity').unitLabel(p) : 'шт.'}`)).join('\n');
+  const { shopUrl } = require('../orders');
   const url = shopUrl({ tab: 'admin', adm: 'products' });
   bot.telegram.sendMessage(owner, `📦 Заканчивается на складе:\n${text}`,
     url ? { reply_markup: { inline_keyboard: [[{ text: '⚙️ Обновить остатки', web_app: { url } }]] } } : {})

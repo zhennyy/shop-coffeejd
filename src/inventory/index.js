@@ -1,6 +1,6 @@
 // inventory.js — единственное место, где меняются остатки: каждое изменение попадает в журнал (для отчётов),
 // а остаток наборов считается по составу.
-const db = require('./db');
+const db = require('../database');
 
 const isBundle = (id) => Boolean(db.prepare('SELECT 1 FROM bundle_items WHERE bundle_id = ?').get(id));
 

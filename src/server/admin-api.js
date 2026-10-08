@@ -1,8 +1,8 @@
 // admin-api.js — данные для админки внутри витрины: статистика, чаты, доставка, промокоды.
 // Все маршруты только для владелицы (adm = проверка подписи Telegram + OWNER_CHAT_ID).
-const db = require('./db');
-const orders = require('./orders');
-const { sendToBuyer } = require('./chat');
+const db = require('../database');
+const orders = require('../orders');
+const { sendToBuyer } = require('../chat');
 
 module.exports = function adminApi(app, { bot, adm }) {
   const toKop = (v) => Math.round(parseFloat(String(v ?? '').replace(',', '.').replace(/\s/g, '')) * 100);
@@ -100,12 +100,12 @@ module.exports = function adminApi(app, { bot, adm }) {
   });
 
   // ───────── ⚙️ Настройки: доставка ─────────
-  const deliveryX = require('./delivery');
+  const deliveryX = require('../delivery');
   const settings = () => ({
     delivery: db.getDeliverySettings(),
     delivery2: (() => { const d = deliveryX.get(); return { post: d.post, distance: { enabled: d.distance.enabled, originAddress: d.distance.origin.address, ready: d.distance.origin.lat != null,
       tiers: d.distance.tiers.map((t) => `${t.km} : ${t.price / 100}`).join('\n') } }; })(),
-    receipts: require('./payments/receipt').enabled(),
+    receipts: require('../payments/receipt').enabled(),
     cities: db.prepare('SELECT id, city, city_en, price, active FROM delivery_rates ORDER BY active DESC, city').all(),
     promos: db.prepare('SELECT id, code, discount_percent, max_uses, used_count, active FROM promo_codes ORDER BY active DESC, id DESC').all(),
   });

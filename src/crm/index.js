@@ -1,13 +1,13 @@
 // crm.js — отправка заказов в CRM по webhook. Включается переменными CRM_URL и CRM_SECRET;
 // без них ничего не делает. Сбой CRM никогда не мешает магазину: ошибки только в лог.
 const axios = require('axios');
-const db = require('./db');
+const db = require('../database');
 
 async function push(orderId) {
   const url = process.env.CRM_URL, secret = process.env.CRM_SECRET;
   if (!url || !secret) return;
   try {
-    const { getOrder } = require('./orders');
+    const { getOrder } = require('../orders');
     const o = getOrder(orderId);
     if (!o) return;
     const name = db.prepare('SELECT name FROM user_settings WHERE chat_id = ?').get(o.chat_id)?.name || '';
@@ -17,7 +17,7 @@ async function push(orderId) {
       order: {
         id: String(o.id), code: o.code, status: o.base, total: o.total, delivery_cost: o.delivery_cost || 0,
         address: o.address || '', track: o.track || '',
-        items: o.items.map((i) => { const u = require('./qty').asUnit({ name: i.name, unit: i.unit }, i.quantity, i.price); return { name: u.name, qty: u.quantity, price: u.price }; }),
+        items: o.items.map((i) => { const u = require('../inventory/quantity').asUnit({ name: i.name, unit: i.unit }, i.quantity, i.price); return { name: u.name, qty: u.quantity, price: u.price }; }),
       },
     };
     for (let attempt = 1; attempt <= 3; attempt++) {

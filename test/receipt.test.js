@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { buildReceipt, contactFrom, normalizePhone } = require('../payments/receipt');
+const { buildReceipt, contactFrom, normalizePhone } = require('../src/payments/receipt');
 const sum = (rc) => rc.items.reduce((a, x) => a + Math.round(parseFloat(x.amount.value) * 100) * Math.round(parseFloat(x.quantity)), 0);
 
 test('чек сходится с суммой при любых скидках и количествах', () => {

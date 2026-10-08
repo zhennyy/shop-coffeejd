@@ -1,6 +1,6 @@
 // reports.js — отчёты для владелицы: продажи, остатки, движение товара. Чат (коротко) и Excel (подробно).
-const db = require('./db');
-const inv = require('./inventory');
+const db = require('../database');
+const inv = require('../inventory');
 
 const PAID_SQL = "('paid','assembling','shipped','delivered')";
 const rub = (kop) => Math.round(kop / 100).toLocaleString('ru-RU') + ' ₽';

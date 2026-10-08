@@ -2,7 +2,7 @@
 // Внутри: каталог, заказы, промокоды, тарифы доставки (JSON и CSV для Excel) и все фото товаров.
 const fs = require('fs');
 const path = require('path');
-const db = require('./db');
+const db = require('../database');
 
 // ---- минимальный ZIP (метод «хранение»: фото и так сжаты) ----
 const CRC_TABLE = new Uint32Array(256).map((_, n) => {

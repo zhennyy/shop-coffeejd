@@ -1,5 +1,5 @@
 // cart.js
-const db = require('./db');
+const db = require('../database');
 
 function getCart(chatId) {
   const items = db

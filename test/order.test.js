@@ -11,7 +11,7 @@ const sumReceipt = (r) => r.items.reduce((a, i) => a + Math.round(parseFloat(i.a
 
 before(async () => {
   S = await h.start();
-  delivery = require('../delivery'); subs = require('../subscriptions');
+  delivery = require('../src/delivery'); subs = require('../src/subscriptions');
   // точка отправки (0,0); геокодер: «Дальняя» ≈ 111 км, «Ближняя» ≈ 2.2 км, «Средняя» ≈ 11 км
   delivery.setGeocoder(async (q) => /дальн/i.test(q) ? { lat: 1, lon: 0 } : /ближн/i.test(q) ? { lat: 0.02, lon: 0 } : /средн/i.test(q) ? { lat: 0.1, lon: 0 } : null);
   delivery.save({ post: { enabled: true, carriers: [{ id: 'cdek', name: 'СДЭК', price: 35000 }, { id: 'russianpost', name: 'Почта России', price: 30000 }] },

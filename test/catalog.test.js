@@ -16,7 +16,7 @@ const buy = async (user, pairs) => {
   return S.call(user, 'POST', '/shop-api/order', { delivery: 'pickup', phone: '89001234567' });
 };
 
-before(async () => { S = await h.start(); inv = require('../inventory'); stock = require('../stock'); });
+before(async () => { S = await h.start(); inv = require('../src/inventory'); stock = require('../src/inventory/import-export'); });
 
 test('два параметра выбора: вес и упаковка; второй без первого запрещён', async () => {
   const id = await mk({ name: 'Колумбия', price: 900, stock: 10, option_label: '250 г', option2_label: 'Пакет' });
@@ -117,7 +117,7 @@ test('CSV: набор по составу', () => {
 });
 
 test('отчёты: продажи, остатки, движение; отправка владелице', async () => {
-  const rep = require('../reports');
+  const rep = require('../src/reports');
   const r = rep.build(30);
   assert.ok(r.orders.n >= 2, JSON.stringify(r.orders)); assert.ok(r.byProduct.length); assert.ok(r.moves.length);
   assert.match(rep.text(30), /Выручка/);
@@ -131,7 +131,7 @@ test('отчёты: продажи, остатки, движение; отпра
 });
 
 test('подписка и повтор заказа с весовым товаром и набором', async () => {
-  const subs = require('../subscriptions');
+  const subs = require('../src/subscriptions');
   const w = await mk({ name: 'Весовой для подписки', unit: 'g', price: 500, stock: 3000, step: 50, min_qty: 100 });
   const a = await mk({ name: 'Компонент П', price: 100, stock: 10 });
   const set = await mk({ name: 'Набор для подписки', price: 700, stock: 0, bundle: [{ product_id: a, qty: 2 }] });

@@ -1,11 +1,11 @@
 // subscriptions.js — повторные заказы по расписанию («кофе каждые 2 недели»).
 // Деньги автоматически НЕ списываются: в нужный день бот собирает новый заказ по текущим ценам и присылает ссылку на оплату —
 // покупатель платит одним нажатием (или пропускает). Так нет ни скрытых списаний, ни юридических рисков с сохранёнными картами.
-const db = require('./db');
-const core = require('./checkout-core');
-const { createPendingOrder } = require('./scenes/checkout');
-const { startPayment } = require('./payments/start');
-const receipt = require('./payments/receipt');
+const db = require('../database');
+const core = require('../checkout');
+const { createPendingOrder } = require('../bot/scenes/checkout');
+const { startPayment } = require('../payments/start');
+const receipt = require('../payments/receipt');
 
 const INTERVALS = [7, 14, 21, 30, 60];
 const mskDate = (ms = Date.now()) => new Date(ms + 3 * 3600e3).toISOString().slice(0, 10);
@@ -125,7 +125,7 @@ async function runDue(bot, now = Date.now()) {
       }
       db.prepare('UPDATE subscriptions SET last_order_id = ? WHERE id = ?').run(orderId, s.id);
       const code = db.prepare('SELECT order_code FROM orders WHERE id = ?').get(orderId).order_code || orderId;
-      const text = tx.due(code, rs.total, items.map((i) => `• ${require('./qty').line(i.p, i.quantity, lang)}`).join('\n'));
+      const text = tx.due(code, rs.total, items.map((i) => `• ${require('../inventory/quantity').line(i.p, i.quantity, lang)}`).join('\n'));
       await bot.telegram.sendMessage(s.chat_id, text, { reply_markup: { inline_keyboard: [[{ text: tx.pay, url: payment.confirmation.confirmation_url }]] } }).catch(() => {});
       made++;
     } catch (e) { console.error('Подписка', s.id, e.message); }

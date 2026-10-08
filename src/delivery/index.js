@@ -4,7 +4,7 @@
 // Адрес превращаем в координаты через OpenStreetMap Nominatim (бесплатно, нужен только интернет). Если сервис не ответил —
 // покупателю честно предлагаем другой способ, а не придумываем цену.
 const axios = require('axios');
-const db = require('./db');
+const db = require('../database');
 
 const DEFAULTS = {
   post: { enabled: false, carriers: [{ id: 'cdek', name: 'СДЭК', price: 35000 }, { id: 'russianpost', name: 'Почта России', price: 30000 }] },

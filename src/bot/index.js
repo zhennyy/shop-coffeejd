@@ -1,13 +1,12 @@
-// bot.js
-require('dotenv').config();
+// Telegram-бот: команды, кнопки, каталог, корзина, AI-консультант
 const { Telegraf, Markup, Scenes, session } = require('telegraf');
 const axios = require('axios');
-const db = require('./db');
-const { getCart } = require('./cart');
+const db = require('../database');
+const { getCart } = require('../cart');
 const { checkoutScene } = require('./scenes/checkout');
 const isOwner = require('./middleware/isOwner');
-const { checkLowStock } = require('./notify');
-const { t } = require('./i18n');
+const { checkLowStock } = require('../notifications');
+const { t } = require('../i18n');
 
 // TELEGRAM_API_ROOT — посредник для Telegram (нужен, если сервер в России)
 const bot = new Telegraf(process.env.BOT_TOKEN, process.env.TELEGRAM_API_ROOT ? { telegram: { apiRoot: process.env.TELEGRAM_API_ROOT.replace(/\/*$/, '/') } } : {});
@@ -21,7 +20,7 @@ bot.use((ctx, next) => {
   return next();
 });
 // Кнопки статусов, ответы покупателям и оценки работают всегда — даже посреди оформления
-require('./chat').setupActions(bot);
+require('../chat').setupActions(bot);
 bot.use(stage.middleware());
 
 function formatPrice(kopecks) {
@@ -435,7 +434,7 @@ async function getAiRecommendation(userQuery, lang, userId = 'chat') {
     .all();
 
   const catalogText = products
-    .map((p) => `#${p.id} ${p.name} (${p.category}) — ${p.unit ? `${formatPrice(p.price * 100)} / 100 ${require('./qty').unitLabel(p)}` : formatPrice(p.price)}. ${p.description || ''}`)
+    .map((p) => `#${p.id} ${p.name} (${p.category}) — ${p.unit ? `${formatPrice(p.price * 100)} / 100 ${require('../inventory/quantity').unitLabel(p)}` : formatPrice(p.price)}. ${p.description || ''}`)
     .join('\n');
 
   const replyLanguageInstruction =
@@ -528,7 +527,7 @@ async function showCart(ctx) {
   const buttons = [];
   for (const i of items) {
     const displayName = (lang === 'en' && i.name_en) || i.name;
-    text += `${displayName} ${require('./qty').isWeight(i) ? '— ' + require('./qty').fmt(i, i.quantity, lang) : 'x' + i.quantity} — ${formatPrice(i.price * i.quantity)}\n`;
+    text += `${displayName} ${require('../inventory/quantity').isWeight(i) ? '— ' + require('../inventory/quantity').fmt(i, i.quantity, lang) : 'x' + i.quantity} — ${formatPrice(i.price * i.quantity)}\n`;
     buttons.push([
       Markup.button.callback(`➖ ${displayName}`, `dec_${i.product_id}`),
       Markup.button.callback(`❌`, `rm_${i.product_id}`),
@@ -592,7 +591,7 @@ async function showMyOrders(ctx) {
     const statusLabel = t(lang, 'orderStatus')[statusKey] || statusKey;
     const items = itemsStmt.all(o.id);
     const itemsText = items
-      .map((i) => `• ${escapeHtml(require('./qty').line(i, i.quantity, lang))}`)
+      .map((i) => `• ${escapeHtml(require('../inventory/quantity').line(i, i.quantity, lang))}`)
       .join('\n');
     const date = (o.created_at || '').slice(0, 16).replace('T', ' ');
     const cityDisplay = db.translateCity(o.delivery_city, lang);
@@ -773,7 +772,7 @@ bot.command('deldelivery', isOwner, (ctx) => {
 // /stock без аргументов — присылает таблицу склада (CSV для Excel); обратно её можно отправить боту файлом
 bot.command('stock', isOwner, async (ctx, next) => {
   if (ctx.message.text.trim().split(/\s+/).length > 1) return next();
-  const { exportXlsx, exportCsv } = require('./stock');
+  const { exportXlsx, exportCsv } = require('../inventory/import-export');
   const caption = '📦 Склад. Откройте в Excel, поменяйте «цена_руб» и «остаток» (колонку id не трогайте), сохраните и отправьте файл сюда — всё обновится. Новая строка без id создаёт товар. Типы: товар, на вес (цена за 100 г, граммы), доп, набор (состав: id×количество).';
   await ctx.replyWithDocument({ source: await exportXlsx(), filename: 'sklad.xlsx' }, { caption });
   await ctx.replyWithDocument({ source: Buffer.from(exportCsv(), 'utf8'), filename: 'sklad.csv' }, { caption: 'То же самое в CSV — если удобнее.' });
@@ -782,7 +781,7 @@ bot.command('stock', isOwner, async (ctx, next) => {
 bot.command('report', isOwner, async (ctx) => {
   const args = ctx.message.text.trim().split(/\s+/).slice(1);
   const days = parseInt(args.find((a) => /^\d+$/.test(a)), 10) || 30;
-  const reports = require('./reports');
+  const reports = require('../reports');
   await ctx.reply(reports.text(days));
   if (args.includes('file')) await ctx.replyWithDocument({ source: await reports.xlsx(days), filename: `otchet-${days}d.xlsx` });
 });
@@ -792,7 +791,7 @@ bot.on('document', isOwner, async (ctx) => {
   if (!isX && !isC) return ctx.reply('Для склада пришлите файл .xlsx или .csv (в Excel: Сохранить как → CSV UTF-8).');
   if (d.file_size > 5e6) return ctx.reply('Файл слишком большой.');
   try {
-    const { importCsv, importXlsx, reportText } = require('./stock');
+    const { importCsv, importXlsx, reportText } = require('../inventory/import-export');
     const link = String(await ctx.telegram.getFileLink(d.file_id));
     const r = isX ? await importXlsx(Buffer.from((await require('axios').get(link, { responseType: 'arraybuffer', timeout: 20000 })).data))
                   : importCsv(await require('axios').get(link, { responseType: 'text', timeout: 15000 }).then((x) => x.data));
@@ -806,7 +805,7 @@ bot.command('stock', isOwner, (ctx) => {
   const [, id, qty] = ctx.message.text.split(' ');
   if (!id || !qty) return ctx.reply('Формат: /stock <id_товара> <новый_остаток>');
   const n = parseInt(qty, 10);
-  if (!(n >= 0) || !require('./inventory').setStock(parseInt(id, 10), n, 'команда /stock')) return ctx.reply('Не получилось: проверьте номер товара и число. Остаток наборов считается сам по составу.');
+  if (!(n >= 0) || !require('../inventory').setStock(parseInt(id, 10), n, 'команда /stock')) return ctx.reply('Не получилось: проверьте номер товара и число. Остаток наборов считается сам по составу.');
   ctx.reply(`Остаток товара #${id} обновлён: ${n}`);
   checkLowStock(bot);
 });
@@ -816,45 +815,32 @@ bot.command('markshipped', isOwner, async (ctx) => {
   const [, orderId] = ctx.message.text.split(' ');
   if (!orderId) return ctx.reply('Формат: /markshipped <id_заказа>');
   try {
-    const o = await require('./orders').changeStatus(bot, parseInt(orderId, 10), 'shipped');
+    const o = await require('../orders').changeStatus(bot, parseInt(orderId, 10), 'shipped');
     ctx.reply(`Заказ № ${o.code} помечен как отправленный, покупателю написали.`);
   } catch (e) { ctx.reply(e.message); }
 });
 
 // Переписка с покупателями — регистрируем последней, после всех кнопок и сценариев
-require('./chat').setupRelay(bot);
+require('../chat').setupRelay(bot);
 
 // Ошибка в одном обработчике не должна ронять бота целиком
 bot.catch((err, ctx) => console.error('Ошибка бота:', ctx?.updateType, err?.message || err));
-process.on('unhandledRejection', (e) => console.error('Необработанная ошибка:', e?.message || e));
-
-bot.launch();
-console.log('Бот запущен');
-
-// Синяя кнопка «🛍 Магазин» слева от поля ввода — открывает витрину у всех покупателей
-if (SHOP_URL) {
-  bot.telegram
-    .setChatMenuButton({ menuButton: { type: 'web_app', text: '🛍 Магазин', web_app: { url: SHOP_URL } } })
-    .catch((e) => console.error('Не удалось поставить кнопку «Магазин»:', e.message));
+// Запуск бота: кнопка «🛍 Магазин» у поля ввода открывает витрину
+async function launchBot() {
+  bot.launch().catch((launchError) => { console.error('Бот не запустился:', launchError.message); process.exit(1); });
+  console.log('Бот запущен');
+  if (SHOP_URL) {
+    await bot.telegram
+      .setChatMenuButton({ menuButton: { type: 'web_app', text: '🛍 Магазин', web_app: { url: SHOP_URL } } })
+      .catch((menuError) => console.error('Не удалось поставить кнопку «Магазин»:', menuError.message));
+  }
 }
 
-const { startWebhookServer } = require('./webhook');
-startWebhookServer(bot, {
-  // AI-подбор из витрины — тот же консультант, что и в чате
+// Витрине нужны две вещи из бота: AI-подбор и показ корзины в чате
+const showcaseHelpers = {
   aiPick: (query, lang, userId) => getAiRecommendation(query, lang, userId),
-  // витрина просит показать корзину в чате — используем ту же функцию, что и кнопка «🛒 Корзина»
   showCartFor: (chatId) =>
     showCart({ chat: { id: chatId }, reply: (text, extra) => bot.telegram.sendMessage(chatId, text, extra) }),
-});
+};
 
-// проверка низкого остатка раз в час
-setInterval(() => checkLowStock(bot), 1000 * 60 * 60);
-// повторные заказы по подпискам: проверяем каждый час, но не раньше 9:00 по Москве (чтобы не писать ночью)
-setInterval(() => {
-  const subs = require('./subscriptions');
-  if (new Date(Date.now() + 3 * 3600e3).getUTCHours() < 9) return;
-  subs.runDue(bot).catch((e) => console.error('Подписки:', e.message));
-}, 1000 * 60 * 60);
-
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+module.exports = { bot, launchBot, showcaseHelpers };
