@@ -22,4 +22,5 @@ section.view{display:none} section.view.on{display:block}
 .sheet .body{padding:16px 20px 0;max-width:760px;margin:0 auto}
 .sheet h2{margin:4px 0 8px;font-size:21px;line-height:1.25}
 .sheet p{margin:0 0 14px;color:var(--muted)}
-.x{position:absolute;right:14px;top:14px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(0,0,0,.35);color:#fff;font-size:16px;cursor:pointer}
+/* z-index: в редакторе товара фото (.photoEdit, position:relative) иначе перекрывает крестик */
+.x{position:absolute;z-index:4;right:14px;top:14px;width:34px;height:34px;border-radius:50%;border:0;background:rgba(0,0,0,.35);color:#fff;font-size:16px;cursor:pointer}

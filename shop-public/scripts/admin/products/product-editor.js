@@ -24,7 +24,7 @@ function editorFormHtml(product, isNew) {
   const categories = [...new Set(adminState.products.map((item) => item.category).filter(Boolean))];
   return `<form class="body form" id="pform">
       <h2>${isNew ? 'Новый товар' : 'Редактирование'}</h2>
-      ${isNew ? '' : `<details><summary>Фото по ссылке</summary><div style="display:flex;gap:8px;margin-top:8px"><input id="photoUrl" placeholder="https://…" inputmode="url"><button class="btn" style="width:auto;padding:0 16px" data-action="set-photo-url" data-product-id="${product.id}">OK</button></div></details>`}
+      ${isNew ? '' : `<details><summary>Фото по ссылке</summary><div style="display:flex;gap:8px;margin-top:8px"><input id="photoUrl" placeholder="https://…" inputmode="url"><button class="btn" type="button" style="width:auto;padding:0 16px" data-action="set-photo-url" data-product-id="${product.id}">OK</button></div></details>`}
       ${input('name', 'Название')}
       <div class="two"><div>${input('price', product.unit ? 'Цена за 100 ' + unitShortName(product.unit) + ', ₽ (целая)' : 'Цена, ₽ (для весового — за 100 г)', 'number', 'inputmode="decimal" min="1" step="any"')}</div><div>${input('stock', product.unit ? 'Остаток, ' + unitShortName(product.unit) : 'Остаток, шт. (для весового — граммы)', 'number', 'inputmode="numeric" min="0"' + (product.is_bundle ? ' disabled title="Считается по составу набора"' : ''))}</div></div>
       ${product.is_bundle ? '<div class="note" style="text-align:left">Остаток набора считается сам по составу.</div>' : ''}
@@ -48,7 +48,7 @@ function editorFormHtml(product, isNew) {
       <details><summary>English (необязательно)</summary>
         ${input('name_en', 'Name')}${input('option_label_en', 'Option (e.g. 250 g)')}${input('category_en', 'Category')}<label>Description</label><textarea name="description_en">${escapeHtml(product.description_en || '')}</textarea>
       </details>
-      <div class="actions">${isNew ? '' : `<button class="btn danger" data-action="delete-product" data-product-id="${product.id}" style="flex:1">Удалить</button>`}<button class="btn" data-action="save-product" style="flex:2">${isNew ? 'Создать' : 'Сохранить'}</button></div>
+      <div class="actions">${isNew ? '' : `<button class="btn danger" type="button" data-action="delete-product" data-product-id="${product.id}" style="flex:1">Удалить</button>`}<button class="btn" data-action="save-product" style="flex:2">${isNew ? 'Создать' : 'Сохранить'}</button></div>
       ${isNew ? '<div class="note">Фото можно добавить сразу после создания</div>' : ''}
     </form>`;
 }
@@ -65,7 +65,8 @@ export function openProductEditor(productId) {
   getElement('sheet').innerHTML = `<button class="x" data-action="close-sheet">✕</button>
     ${photoHtml}
     ${editorFormHtml(product, isNew)}`;
-  // форма отправляется только кнопками (Enter в поле ничего не отправляет на сервер сам по себе)
+  // Enter в поле нажимает первую кнопку отправки формы — это «Сохранить»/«Создать» (у остальных type="button");
+  // саму отправку формы браузером отменяем — сохраняет обработчик кнопки
   getElement('pform').addEventListener('submit', (event) => event.preventDefault());
   showSheet();
   renderBundleEditor();
