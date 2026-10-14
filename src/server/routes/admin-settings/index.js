@@ -85,7 +85,7 @@ async function buildStats(days) {
     byDay,
     top: [...topProducts.values()].sort((first, second) => second.revenue - first.revenue).slice(0, TOP_LIST_SIZE),
     cities: [...cities.values()].sort((first, second) => second.revenue - first.revenue).slice(0, TOP_LIST_SIZE),
-    lowStock: await database.product.findMany({ where: { stock: { lte: LOW_STOCK_PIECES } }, select: { id: true, name: true, stock: true }, orderBy: [{ stock: 'asc' }, { name: 'asc' }] }),
+    lowStock: await database.product.findMany({ where: { stock: { lte: LOW_STOCK_PIECES } }, select: { id: true, name: true, stock: true, unit: true }, orderBy: [{ stock: 'asc' }, { name: 'asc' }] }),
   };
 }
 

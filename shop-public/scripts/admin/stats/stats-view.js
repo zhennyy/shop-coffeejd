@@ -1,7 +1,7 @@
 // Админка → «Статистика»: показатели за 7/30/90 дней, выручка по дням, топ товаров, города, заканчивающиеся товары.
 import { callApi } from '../../api.js';
 import { getElement, escapeHtml } from '../../utils/dom.js';
-import { formatRubles } from '../../utils/format.js';
+import { formatRubles, formatAmount } from '../../utils/format.js';
 import { showToast } from '../../utils/toast.js';
 import { adminState } from '../admin-state.js';
 
@@ -45,7 +45,7 @@ function rankingHtml(rows, label, caption) {
 
 function lowStockHtml(stats) {
   if (!stats.lowStock.length) return '';
-  return `<div class="box"><h3>⚠️ Заканчивается</h3>${stats.lowStock.map((product) => `<div class="aline" data-action="open-low-stock-product" data-product-id="${product.id}" style="margin:0 0 6px;background:var(--bg)"><div class="mid"><div class="t">${escapeHtml(product.name)}</div><div class="s"><span class="warn">${product.stock > 0 ? 'осталось ' + product.stock + ' шт.' : 'нет в наличии'}</span></div></div><span style="color:var(--muted)">›</span></div>`).join('')}</div>`;
+  return `<div class="box"><h3>⚠️ Заканчивается</h3>${stats.lowStock.map((product) => `<div class="aline" data-action="open-low-stock-product" data-product-id="${product.id}" style="margin:0 0 6px;background:var(--bg)"><div class="mid"><div class="t">${escapeHtml(product.name)}</div><div class="s"><span class="warn">${product.stock > 0 ? 'осталось ' + (product.unit ? formatAmount(product.stock, product.unit) : product.stock + ' шт.') : 'нет в наличии'}</span></div></div><span style="color:var(--muted)">›</span></div>`).join('')}</div>`;
 }
 
 export async function loadStats() {

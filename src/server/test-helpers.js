@@ -51,7 +51,7 @@ async function start() {
   const { initializeDatabase } = require('../database/initialize');
   await initializeDatabase();
   const { startWebhookServer } = require('./index');
-  startWebhookServer(fakeBot, { aiPick: async () => ({ advice: '', ids: [] }) });
+  startWebhookServer(fakeBot, { aiPick: async () => ({ adviceText: '', productIds: [] }) });
   await new Promise((resolve) => setTimeout(resolve, 400));
   const baseUrl = `http://127.0.0.1:${process.env.WEBHOOK_PORT}`;
   const call = (userId, method, urlPath, body, headers = {}) => fetch(baseUrl + urlPath, {
