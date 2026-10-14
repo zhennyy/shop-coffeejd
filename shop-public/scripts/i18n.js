@@ -1,0 +1,41 @@
+// Тексты интерфейса на русском и английском. Админка — только на русском (ей пользуется владелица).
+import { state } from './state.js';
+
+const TEXTS = {
+  ru: {
+    tabCatalog: 'Каталог', tabCart: 'Корзина', tabOrders: 'Заказы', tabAi: 'AI-подбор', tabAdmin: 'Админка',
+    all: 'Все', search: 'Поиск кофе и чая',
+    inStock: (count) => `В наличии ${count} шт.`, lowStock: (count) => `Осталось ${count}`, outOfStock: 'Нет в наличии', nothingFound: 'Ничего не нашлось',
+    checkout: (sum) => `Оформить · ${sum}`, noMoreInStock: 'Больше нет в наличии', addToCart: 'В корзину', priceFrom: 'от', total: 'Итого',
+    loadError: 'Не получилось загрузить. Проверьте интернет и попробуйте ещё раз.', retry: 'Обновить',
+    notInTelegram: 'Откройте магазин из Telegram — кнопка «🛍 Магазин» в чате с ботом.',
+    cartTitle: 'Корзина', cartEmpty: 'Корзина пока пуста', toCatalog: 'Перейти в каталог',
+    checkoutNote: 'Оплата картой или СБП через ЮKassa — безопасно.',
+    ordersTitle: 'Мои заказы', ordersEmpty: 'Заказов пока нет', delivery: 'Доставка',
+    aiTitle: 'Подберём кофе', aiPlaceholder: 'Расскажите, как завариваете и какой вкус любите, бюджет…', aiFind: 'Подобрать', aiWaiting: 'Подбираю',
+    aiHints: ['Для турки, без кислинки, до 1500 ₽', 'Эспрессо с шоколадными нотами', 'Фильтр, яркий и ягодный'],
+    aiNothing: 'Под запрос ничего не нашлось — попробуйте описать иначе',
+  },
+  en: {
+    tabCatalog: 'Catalog', tabCart: 'Cart', tabOrders: 'Orders', tabAi: 'AI pick', tabAdmin: 'Admin',
+    all: 'All', search: 'Search coffee and tea',
+    inStock: (count) => `In stock: ${count}`, lowStock: (count) => `Only ${count} left`, outOfStock: 'Out of stock', nothingFound: 'Nothing found',
+    checkout: (sum) => `Checkout · ${sum}`, noMoreInStock: 'No more in stock', addToCart: 'Add to cart', priceFrom: 'from', total: 'Total',
+    loadError: 'Could not load. Check your connection and try again.', retry: 'Retry',
+    notInTelegram: 'Open the shop from Telegram — the «🛍 Магазин» button in the bot chat.',
+    cartTitle: 'Cart', cartEmpty: 'Your cart is empty', toCatalog: 'Go to catalog',
+    checkoutNote: 'Pay by card or SBP via ЮKassa — secure.',
+    ordersTitle: 'My orders', ordersEmpty: 'No orders yet', delivery: 'Delivery',
+    aiTitle: 'Find your coffee', aiPlaceholder: 'Tell us how you brew, what taste you like, budget…', aiFind: 'Find', aiWaiting: 'Thinking',
+    aiHints: ['Cezve, low acidity, under 1500 ₽', 'Espresso with chocolate notes', 'Filter, bright and berry'],
+    aiNothing: 'Nothing matched — try describing it differently',
+  },
+};
+
+/** Тексты на текущем языке */
+export const texts = () => TEXTS[state.language];
+
+export const isEnglish = () => state.language === 'en';
+
+/** Короткая фраза на текущем языке: inLanguage('Выбрать', 'Choose') */
+export const inLanguage = (russianText, englishText) => (isEnglish() ? englishText : russianText);
