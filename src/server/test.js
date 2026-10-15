@@ -4,13 +4,23 @@ const assert = require('node:assert/strict');
 const testHelpers = require('./test-helpers');
 
 let shop;
-before(async () => { shop = await testHelpers.start(); });
+before(async () => {
+  shop = await testHelpers.start();
+});
 
 test('SSRF: ссылки во внутреннюю сеть отклоняются', async () => {
   const { assertPublicUrl } = require('./index');
-  const internalUrls = ['https://127.0.0.1/a.jpg', 'https://localhost/a.jpg', 'https://169.254.169.254/latest', 'https://10.0.0.5/x',
-    'https://192.168.1.1/x', 'https://[::1]/x', 'https://172.16.0.1/x'];
-  for (const internalUrl of internalUrls) await assert.rejects(() => assertPublicUrl(internalUrl), undefined, internalUrl);
+  const internalUrls = [
+    'https://127.0.0.1/a.jpg',
+    'https://localhost/a.jpg',
+    'https://169.254.169.254/latest',
+    'https://10.0.0.5/x',
+    'https://192.168.1.1/x',
+    'https://[::1]/x',
+    'https://172.16.0.1/x',
+  ];
+  for (const internalUrl of internalUrls)
+    await assert.rejects(() => assertPublicUrl(internalUrl), undefined, internalUrl);
 });
 
 test('поддельная подпись Telegram отклоняется', async () => {

@@ -35,7 +35,10 @@ function buildReceipt({ items, goodsTotal, delivery = 0, contact }) {
   let kopecksLeft = goodsTotal;
   const discountedLines = items.map((receiptItem, itemIndex) => {
     const lineTotalBeforeDiscount = receiptItem.price * receiptItem.quantity;
-    const lineTotal = itemIndex === items.length - 1 ? kopecksLeft : Math.round((lineTotalBeforeDiscount * goodsTotal) / totalBeforeDiscount);
+    const lineTotal =
+      itemIndex === items.length - 1
+        ? kopecksLeft
+        : Math.round((lineTotalBeforeDiscount * goodsTotal) / totalBeforeDiscount);
     kopecksLeft -= lineTotal;
     return { receiptItem, lineTotal };
   });
@@ -44,8 +47,12 @@ function buildReceipt({ items, goodsTotal, delivery = 0, contact }) {
   const addPosition = (description, quantity, unitPriceKopecks, paymentSubject) => {
     if (quantity <= 0 || unitPriceKopecks <= 0) return;
     receiptPositions.push({
-      description: String(description).slice(0, 128), quantity: quantity.toFixed(3), amount: { value: formatAmount(unitPriceKopecks), currency: 'RUB' },
-      vat_code: vatCode, payment_mode: 'full_payment', payment_subject: paymentSubject,
+      description: String(description).slice(0, 128),
+      quantity: quantity.toFixed(3),
+      amount: { value: formatAmount(unitPriceKopecks), currency: 'RUB' },
+      vat_code: vatCode,
+      payment_mode: 'full_payment',
+      payment_subject: paymentSubject,
     });
   };
   for (const { receiptItem, lineTotal } of discountedLines) {
@@ -58,10 +65,18 @@ function buildReceipt({ items, goodsTotal, delivery = 0, contact }) {
   }
   addPosition('Доставка', 1, delivery, 'service');
 
-  const fiscalReceipt = { customer: contact.phone ? { phone: contact.phone } : { email: contact.email }, items: receiptPositions };
+  const fiscalReceipt = {
+    customer: contact.phone ? { phone: contact.phone } : { email: contact.email },
+    items: receiptPositions,
+  };
   if (process.env.RECEIPT_TAX_SYSTEM) fiscalReceipt.tax_system_code = parseInt(process.env.RECEIPT_TAX_SYSTEM, 10);
-  const receiptTotal = receiptPositions.reduce((sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)), 0);
-  if (receiptTotal !== goodsTotal + delivery) throw new Error(`Чек не сошёлся с суммой платежа (${receiptTotal} ≠ ${goodsTotal + delivery})`);
+  const receiptTotal = receiptPositions.reduce(
+    (sum, position) =>
+      sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)),
+    0,
+  );
+  if (receiptTotal !== goodsTotal + delivery)
+    throw new Error(`Чек не сошёлся с суммой платежа (${receiptTotal} ≠ ${goodsTotal + delivery})`);
   return fiscalReceipt;
 }
 

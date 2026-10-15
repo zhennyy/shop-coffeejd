@@ -26,19 +26,32 @@ const deliverySettingsValidator = createValidator((request) => {
   const freeFrom = form.freeFrom === '' || form.freeFrom == null ? 0 : toKopecks(form.freeFrom);
   if (!(otherPrice >= 0)) throw new ValidationError('Цена для других городов — числом');
   if (!(freeFrom >= 0)) throw new ValidationError('«Бесплатно от» — числом (0 — выключено)');
-  return { deliverySettings: { otherPrice, freeFrom, pickup: Boolean(form.pickup), pickupAddress: cleanText(form.pickupAddress, 200) } };
+  return {
+    deliverySettings: {
+      otherPrice,
+      freeFrom,
+      pickup: Boolean(form.pickup),
+      pickupAddress: cleanText(form.pickupAddress, 200),
+    },
+  };
 });
 
 // СДЭК / Почта и доставка по расстоянию. carriers = null — оставить текущих перевозчиков
 const deliveryOptionsValidator = createValidator((request) => {
   const form = request.body || {};
   const carriers = Array.isArray(form.carriers)
-    ? form.carriers.slice(0, MAX_CARRIERS).map((carrierForm) => {
-      const price = toKopecks(carrierForm.price);
-      if (!(price >= 0)) throw new ValidationError(`Цена «${carrierForm.name}» — числом`);
-      const carrierId = String(carrierForm.id || '').replace(/[^a-z0-9_-]/gi, '').slice(0, 20) || 'c' + Math.random().toString(36).slice(2, 6);
-      return { id: carrierId, name: cleanText(carrierForm.name, 40), price };
-    }).filter((carrier) => carrier.name)
+    ? form.carriers
+        .slice(0, MAX_CARRIERS)
+        .map((carrierForm) => {
+          const price = toKopecks(carrierForm.price);
+          if (!(price >= 0)) throw new ValidationError(`Цена «${carrierForm.name}» — числом`);
+          const carrierId =
+            String(carrierForm.id || '')
+              .replace(/[^a-z0-9_-]/gi, '')
+              .slice(0, 20) || 'c' + Math.random().toString(36).slice(2, 6);
+          return { id: carrierId, name: cleanText(carrierForm.name, 40), price };
+        })
+        .filter((carrier) => carrier.name)
     : null;
   let distanceTiers = null;
   if (form.tiers !== undefined) {
@@ -50,8 +63,11 @@ const deliveryOptionsValidator = createValidator((request) => {
     if (!distanceTiers.length) throw new ValidationError('Добавьте хотя бы одну ступень расстояния');
   }
   return {
-    postEnabled: Boolean(form.postEnabled), carriers,
-    distanceEnabled: Boolean(form.distanceEnabled), distanceTiers, originAddress: cleanText(form.originAddress, 200),
+    postEnabled: Boolean(form.postEnabled),
+    carriers,
+    distanceEnabled: Boolean(form.distanceEnabled),
+    distanceTiers,
+    originAddress: cleanText(form.originAddress, 200),
   };
 });
 
@@ -66,18 +82,32 @@ const cityValidator = createValidator((request) => {
 
 const promoCodeValidator = createValidator((request) => {
   const form = request.body || {};
-  const code = String(form.code || '').trim().toUpperCase().replace(/\s+/g, '').slice(0, 30);
+  const code = String(form.code || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .slice(0, 30);
   const discountPercent = parseInt(form.percent, 10);
   const maxUses = form.max_uses === '' || form.max_uses == null ? null : parseInt(form.max_uses, 10);
   if (!PROMO_CODE_PATTERN.test(code)) throw new ValidationError('Код — буквы и цифры, от 2 символов');
-  if (!(discountPercent >= 1 && discountPercent <= MAX_DISCOUNT_PERCENT)) throw new ValidationError(`Скидка — от 1 до ${MAX_DISCOUNT_PERCENT}%`);
+  if (!(discountPercent >= 1 && discountPercent <= MAX_DISCOUNT_PERCENT))
+    throw new ValidationError(`Скидка — от 1 до ${MAX_DISCOUNT_PERCENT}%`);
   if (maxUses !== null && !(maxUses >= 1)) throw new ValidationError('Лимит — число от 1 (или пусто — без лимита)');
   return { code, discountPercent, maxUses };
 });
 
-const promoToggleValidator = createValidator((request) => ({ promoId: parsePositiveId(request.params.id), isActive: Boolean(request.body?.active) }));
+const promoToggleValidator = createValidator((request) => ({
+  promoId: parsePositiveId(request.params.id),
+  isActive: Boolean(request.body?.active),
+}));
 
 module.exports = {
-  statsValidator, chatIdValidator, chatMessageValidator, deliverySettingsValidator, deliveryOptionsValidator,
-  cityValidator, promoCodeValidator, promoToggleValidator,
+  statsValidator,
+  chatIdValidator,
+  chatMessageValidator,
+  deliverySettingsValidator,
+  deliveryOptionsValidator,
+  cityValidator,
+  promoCodeValidator,
+  promoToggleValidator,
 };

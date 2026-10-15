@@ -30,8 +30,10 @@ const STRINGS = {
     noMoreStock: 'Больше нет в наличии',
     cartChanged: 'Корзина изменилась, пока вы оформляли заказ. Проверьте её и нажмите «Оформить» ещё раз 🙏',
     openShopText: 'Весь каталог — в нашей витрине 👇',
-    welcomeBackShop: (name) => `С возвращением, ${name}! ☕\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
-    nameSavedShop: (name) => `Приятно познакомиться, ${name}! 👋\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
+    welcomeBackShop: (name) =>
+      `С возвращением, ${name}! ☕\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
+    nameSavedShop: (name) =>
+      `Приятно познакомиться, ${name}! 👋\nЭто CoFFeeJD — свежеобжаренный кофе и чай с доставкой.\n\nЖми кнопку, чтобы открыть каталог. А если есть вопрос — просто напиши его сюда 💬`,
     welcomeShop: 'Добро пожаловать в CoFFeeJD ☕',
     myOrdersBtn: '📦 Мои заказы',
     aiPickBtn: '✨ AI-подбор',
@@ -112,7 +114,8 @@ const STRINGS = {
     payLinkText: (code) => `Ссылка для оплаты заказа ${code}:`,
     payUrlButton: 'Оплатить',
     paymentError: 'Не получилось создать оплату. Попробуйте ещё раз через минуту.',
-    needContact: 'Для чека нужен ваш телефон или e-mail. Откройте магазин из меню бота и оформите заказ там: он спросит контакт один раз и запомнит.',
+    needContact:
+      'Для чека нужен ваш телефон или e-mail. Откройте магазин из меню бота и оформите заказ там: он спросит контакт один раз и запомнит.',
 
     // === уведомления оплаты / доставки (payment & shipping notifications) ===
     paymentReceived: (name, id) => `${name ? name + ', ' : ''}оплата получена! Заказ #${id} принят в работу. ✅`,
@@ -152,8 +155,10 @@ const STRINGS = {
     noMoreStock: 'No more in stock',
     cartChanged: 'Your cart changed while you were checking out. Please review it and tap «Checkout» again 🙏',
     openShopText: 'The whole catalog is in our shop 👇',
-    welcomeBackShop: (name) => `Welcome back, ${name}! ☕\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
-    nameSavedShop: (name) => `Nice to meet you, ${name}! 👋\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
+    welcomeBackShop: (name) =>
+      `Welcome back, ${name}! ☕\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
+    nameSavedShop: (name) =>
+      `Nice to meet you, ${name}! 👋\nThis is CoFFeeJD — freshly roasted coffee and tea with delivery.\n\nTap the button to open the catalog. Have a question? Just write it here 💬`,
     welcomeShop: 'Welcome to CoFFeeJD ☕',
     myOrdersBtn: '📦 My orders',
     aiPickBtn: '✨ AI pick',
@@ -234,10 +239,12 @@ const STRINGS = {
     payLinkText: (code) => `Payment link for order ${code}:`,
     payUrlButton: 'Pay',
     paymentError: 'Could not create the payment. Please try again in a minute.',
-    needContact: 'We need your phone or e-mail for the receipt. Please open the shop from the bot menu and place the order there: it asks once and remembers.',
+    needContact:
+      'We need your phone or e-mail for the receipt. Please open the shop from the bot menu and place the order there: it asks once and remembers.',
 
     // === payment & shipping notifications ===
-    paymentReceived: (name, id) => `${name ? name + ', y' : 'Y'}our payment has been received! Order #${id} is now being processed. ✅`,
+    paymentReceived: (name, id) =>
+      `${name ? name + ', y' : 'Y'}our payment has been received! Order #${id} is now being processed. ✅`,
     orderShipped: (name, id) => `${name ? name + ', y' : 'Y'}our order #${id} has shipped! 🚚`,
 
     // === language switch ===

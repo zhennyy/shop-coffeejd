@@ -75,14 +75,22 @@ async function runBuyerScreens(runner, shop) {
   await page.waitForSelector('#v-orders.on .order');
   await runner.settle(page);
   const links = await page.evaluate(() => window.__telegramLog.links);
-  check('после оформления открыта ссылка на оплату', links.length === 1 && links[0].startsWith('https://pay.test/'), JSON.stringify(links));
+  check(
+    'после оформления открыта ссылка на оплату',
+    links.length === 1 && links[0].startsWith('https://pay.test/'),
+    JSON.stringify(links),
+  );
   await normalizeOrders(shop);
   await tabButton(page, 'Каталог').click();
   await tabButton(page, 'Заказы').click();
   await page.waitForSelector('#v-orders .order');
   await snap(page, 'b21-orders-after-checkout');
   const ordersText = await page.locator('#v-orders').innerText();
-  check('новый заказ виден в «Мои заказы»', /CJ-105/.test(ordersText) && /Ждёт оплат|ждём оплату/i.test(ordersText), ordersText.slice(0, 200));
+  check(
+    'новый заказ виден в «Мои заказы»',
+    /CJ-105/.test(ordersText) && /Ждёт оплат|ждём оплату/i.test(ordersText),
+    ordersText.slice(0, 200),
+  );
   check('корзина пуста после заказа', (await page.locator('#cartCount').innerText()) === '');
 
   await page.locator('#v-orders button', { hasText: 'Повторять регулярно' }).first().click();

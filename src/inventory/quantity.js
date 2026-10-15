@@ -4,7 +4,8 @@
 const UNITS = { g: { ru: 'г', en: 'g' }, ml: { ru: 'мл', en: 'ml' } };
 
 const isWeight = (product) => Boolean(product) && Object.hasOwn(UNITS, product.unit);
-const unitLabel = (product, language = 'ru') => (isWeight(product) ? UNITS[product.unit][language === 'en' ? 'en' : 'ru'] : '');
+const unitLabel = (product, language = 'ru') =>
+  isWeight(product) ? UNITS[product.unit][language === 'en' ? 'en' : 'ru'] : '';
 const stepOf = (product) => Math.max(1, product.step || 1);
 const minimumOf = (product) => Math.max(1, product.min_qty || 1);
 
@@ -23,7 +24,8 @@ function explainQuantityRules(product, language = 'ru') {
 }
 
 // «300 г» или «2»
-const formatQuantity = (product, quantity, language = 'ru') => (isWeight(product) ? `${quantity} ${unitLabel(product, language)}` : String(quantity));
+const formatQuantity = (product, quantity, language = 'ru') =>
+  isWeight(product) ? `${quantity} ${unitLabel(product, language)}` : String(quantity);
 
 // Строка заказа: «Эфиопия × 2» или «Эфиопия, 300 г»
 const formatOrderLine = (product, quantity, language = 'ru') =>
@@ -35,4 +37,13 @@ const asReceiptLine = (product, quantity, price) =>
     ? { name: `${product.name}, ${quantity} ${unitLabel(product)}`, quantity: 1, price: price * quantity }
     : { name: product.name, quantity, price };
 
-module.exports = { UNITS, unitLabel, isWeight, isValidQuantity, explainQuantityRules, formatQuantity, formatOrderLine, asReceiptLine };
+module.exports = {
+  UNITS,
+  unitLabel,
+  isWeight,
+  isValidQuantity,
+  explainQuantityRules,
+  formatQuantity,
+  formatOrderLine,
+  asReceiptLine,
+};

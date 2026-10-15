@@ -33,7 +33,12 @@ test('оплата списывает склад, повтор не дублир
 });
 
 test('посторонние события и кривой id платежа просто подтверждаются', async () => {
-  const sendEvent = (event) => fetch(shop.base + '/yookassa-webhook', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(event) });
+  const sendEvent = (event) =>
+    fetch(shop.base + '/yookassa-webhook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(event),
+    });
   const ordersBefore = await shop.database.order.count({ where: { status: 'paid' } });
   assert.equal((await sendEvent({ event: 'payment.canceled', object: { id: 'pay-1' } })).status, 200);
   assert.equal((await sendEvent({ event: 'payment.succeeded', object: { id: '../../etc' } })).status, 200);

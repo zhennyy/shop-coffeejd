@@ -19,8 +19,10 @@ function formValue(product, fieldName) {
 }
 
 function editorFormHtml(product, isNew) {
-  const input = (fieldName, label, type = 'text', attributes = '') => `<label>${label}</label><input name="${fieldName}" type="${type}" value="${escapeHtml(formValue(product, fieldName))}" ${attributes}>`;
-  const unitOption = (value, label) => `<option value="${value}" ${(product.unit || '') === value ? 'selected' : ''}>${label}</option>`;
+  const input = (fieldName, label, type = 'text', attributes = '') =>
+    `<label>${label}</label><input name="${fieldName}" type="${type}" value="${escapeHtml(formValue(product, fieldName))}" ${attributes}>`;
+  const unitOption = (value, label) =>
+    `<option value="${value}" ${(product.unit || '') === value ? 'selected' : ''}>${label}</option>`;
   const categories = [...new Set(adminState.products.map((item) => item.category).filter(Boolean))];
   return `<form class="body form" id="pform">
       <h2>${isNew ? 'Новый товар' : 'Редактирование'}</h2>
@@ -56,12 +58,15 @@ function editorFormHtml(product, isNew) {
 export function openProductEditor(productId) {
   adminState.editingProductId = productId;
   const isNew = productId === 'new';
-  let product = isNew ? NEW_PRODUCT : adminState.products.find((item) => item.id == productId);
+  let product = isNew ? NEW_PRODUCT : adminState.products.find((item) => item.id === Number(productId));
   if (!product) return;
   // у варианта редактируем общее название группы, вариант — в полях «Параметр»
-  if (product.group_key) product = { ...product, name: product.group_key, name_en: (product.name_en || '').split(' · ')[0] };
+  if (product.group_key)
+    product = { ...product, name: product.group_key, name_en: (product.name_en || '').split(' · ')[0] };
   adminState.bundleDraft = (product.bundle || []).map((item) => ({ product_id: item.product_id, qty: item.qty }));
-  const photoHtml = isNew ? '' : `<div class="big photoEdit">${productPhotoHtml(product)}<button class="up" data-action="upload-photo" data-product-id="${product.id}">📷 ${product.has_photo ? 'Заменить фото' : 'Добавить фото'}</button></div>`;
+  const photoHtml = isNew
+    ? ''
+    : `<div class="big photoEdit">${productPhotoHtml(product)}<button class="up" data-action="upload-photo" data-product-id="${product.id}">📷 ${product.has_photo ? 'Заменить фото' : 'Добавить фото'}</button></div>`;
   getElement('sheet').innerHTML = `<button class="x" data-action="close-sheet">✕</button>
     ${photoHtml}
     ${editorFormHtml(product, isNew)}`;
@@ -90,7 +95,9 @@ async function saveProduct() {
       await reloadProducts();
     }
     vibrate('medium');
-  } catch (error) { showToast(error.message); }
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function deleteProduct(productId) {
@@ -100,18 +107,25 @@ async function deleteProduct(productId) {
     showToast('Удалено');
     closeSheet();
     await reloadProducts();
-  } catch (error) { showToast(error.message); }
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function setPhotoFromUrl(productId) {
   const url = getElement('photoUrl').value.trim();
   callApi(`/admin/products/${productId}/photo-url`, { url }, 1)
-    .then(async () => { showToast('Фото обновлено ✓'); await reloadProducts(); openProductEditor(productId); })
+    .then(async () => {
+      showToast('Фото обновлено ✓');
+      await reloadProducts();
+      openProductEditor(productId);
+    })
     .catch((error) => showToast(error.message));
 }
 
 export const productEditorActions = {
-  'edit-product': (element) => openProductEditor(element.dataset.productId === 'new' ? 'new' : Number(element.dataset.productId)),
+  'edit-product': (element) =>
+    openProductEditor(element.dataset.productId === 'new' ? 'new' : Number(element.dataset.productId)),
   'save-product': () => saveProduct(),
   'delete-product': (element) => deleteProduct(Number(element.dataset.productId)),
   'set-photo-url': (element) => setPhotoFromUrl(Number(element.dataset.productId)),

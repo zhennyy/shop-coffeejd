@@ -12,8 +12,14 @@ const { getDeliverySettings, setSetting } = require('../../../settings');
 const { asyncHandler } = require('../../async-handler');
 const { idParamValidator } = require('../../validation');
 const {
-  statsValidator, chatIdValidator, chatMessageValidator, deliverySettingsValidator, deliveryOptionsValidator,
-  cityValidator, promoCodeValidator, promoToggleValidator,
+  statsValidator,
+  chatIdValidator,
+  chatMessageValidator,
+  deliverySettingsValidator,
+  deliveryOptionsValidator,
+  cityValidator,
+  promoCodeValidator,
+  promoToggleValidator,
 } = require('./validation');
 
 const DAY_MS = 864e5;
@@ -24,7 +30,10 @@ const LOW_STOCK_PIECES = 3;
 const ACTIVE_STATUSES = ['paid', 'assembling', 'shipped'];
 
 // «2026-10-08 21:30:00» (UTC) → дата по Москве «2026-10-09»
-const moscowDay = (sqliteTimestamp) => new Date(new Date(String(sqliteTimestamp).replace(' ', 'T') + 'Z').getTime() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+const moscowDay = (sqliteTimestamp) =>
+  new Date(new Date(String(sqliteTimestamp).replace(' ', 'T') + 'Z').getTime() + MOSCOW_OFFSET_MS)
+    .toISOString()
+    .slice(0, 10);
 
 async function buildStats(days) {
   const todayInMoscow = new Date(Date.now() + MOSCOW_OFFSET_MS);
@@ -48,7 +57,12 @@ async function buildStats(days) {
 
   const topProducts = new Map();
   for (const orderItem of await orders.getOrderItems(paidOrders.map((order) => order.id))) {
-    const productTotals = topProducts.get(orderItem.product_id) || { id: orderItem.product_id, name: orderItem.name || '—', qty: 0, revenue: 0 };
+    const productTotals = topProducts.get(orderItem.product_id) || {
+      id: orderItem.product_id,
+      name: orderItem.name || '—',
+      qty: 0,
+      revenue: 0,
+    };
     productTotals.qty += orderItem.quantity;
     productTotals.revenue += orderItem.quantity * orderItem.price;
     topProducts.set(orderItem.product_id, productTotals);
@@ -71,7 +85,10 @@ async function buildStats(days) {
   }
 
   return {
-    days, revenue, delivery: deliveryRevenue, goods: revenue - deliveryRevenue,
+    days,
+    revenue,
+    delivery: deliveryRevenue,
+    goods: revenue - deliveryRevenue,
     orders: paidOrders.length,
     avg: paidOrders.length ? Math.round(revenue / paidOrders.length) : 0,
     customers: ordersPerCustomer.size,
@@ -79,13 +96,19 @@ async function buildStats(days) {
     unpaid: (countByStatus.awaiting_payment || 0) + (countByStatus.pending || 0),
     cancelled: countByStatus.cancelled || 0,
     promoUsed: paidOrders.filter((order) => order.promo_code).length,
-    rating: ratedOrders.length ? Math.round((ratedOrders.reduce((sum, order) => sum + order.rating, 0) / ratedOrders.length) * 10) / 10 : null,
+    rating: ratedOrders.length
+      ? Math.round((ratedOrders.reduce((sum, order) => sum + order.rating, 0) / ratedOrders.length) * 10) / 10
+      : null,
     rated: ratedOrders.length,
     active: await database.order.count({ where: { status: { in: ACTIVE_STATUSES } } }),
     byDay,
     top: [...topProducts.values()].sort((first, second) => second.revenue - first.revenue).slice(0, TOP_LIST_SIZE),
     cities: [...cities.values()].sort((first, second) => second.revenue - first.revenue).slice(0, TOP_LIST_SIZE),
-    lowStock: await database.product.findMany({ where: { stock: { lte: LOW_STOCK_PIECES } }, select: { id: true, name: true, stock: true, unit: true }, orderBy: [{ stock: 'asc' }, { name: 'asc' }] }),
+    lowStock: await database.product.findMany({
+      where: { stock: { lte: LOW_STOCK_PIECES } },
+      select: { id: true, name: true, stock: true, unit: true },
+      orderBy: [{ stock: 'asc' }, { name: 'asc' }],
+    }),
   };
 }
 
@@ -104,9 +127,13 @@ async function buildSettings() {
       },
     },
     receipts: receipt.isEnabled(),
-    cities: await database.deliveryRate.findMany({ select: { id: true, city: true, city_en: true, price: true, active: true }, orderBy: [{ active: 'desc' }, { city: 'asc' }] }),
+    cities: await database.deliveryRate.findMany({
+      select: { id: true, city: true, city_en: true, price: true, active: true },
+      orderBy: [{ active: 'desc' }, { city: 'asc' }],
+    }),
     promos: await database.promoCode.findMany({
-      select: { id: true, code: true, discount_percent: true, max_uses: true, used_count: true, active: true }, orderBy: [{ active: 'desc' }, { id: 'desc' }],
+      select: { id: true, code: true, discount_percent: true, max_uses: true, used_count: true, active: true },
+      orderBy: [{ active: 'desc' }, { id: 'desc' }],
     }),
   };
 }
@@ -114,115 +141,203 @@ async function buildSettings() {
 function createAdminSettingsRouter({ bot, ownerAuth }) {
   const router = express.Router();
   // Ответ JSON или {error} со статусом 400
-  const jsonRoute = (handler) => asyncHandler(async (request, response) => {
-    try {
-      response.json(await handler(request));
-    } catch (routeError) {
-      response.status(400).json({ error: routeError.message });
-    }
-  });
+  const jsonRoute = (handler) =>
+    asyncHandler(async (request, response) => {
+      try {
+        response.json(await handler(request));
+      } catch (routeError) {
+        response.status(400).json({ error: routeError.message });
+      }
+    });
 
   // ───────── 📊 Статистика ─────────
-  router.get('/stats', ...ownerAuth, statsValidator, jsonRoute((request) => buildStats(request.validated.days)));
+  router.get(
+    '/stats',
+    ...ownerAuth,
+    statsValidator,
+    jsonRoute((request) => buildStats(request.validated.days)),
+  );
 
   // ───────── 💬 Чаты ─────────
-  router.get('/chats', ...ownerAuth, jsonRoute(async () => ({ chats: await messages.listChats(), unread: await messages.countUnread() })));
-  router.get('/chats/:chatId', ...ownerAuth, chatIdValidator, jsonRoute(async (request) => {
-    const { chatId } = request.validated;
-    await messages.markChatRead(chatId);
-    const buyerOrders = await database.order.findMany({
-      where: { chat_id: chatId }, orderBy: { id: 'desc' }, take: CHAT_ORDERS_LIMIT, select: { id: true, order_code: true, status: true, total: true },
-    });
-    return {
-      name: (await customers.getName(chatId)) || '',
-      messages: await messages.getChatHistory(chatId),
-      orders: buyerOrders.map((order) => ({ id: order.id, code: order.order_code || String(order.id), status: orders.baseStatus(order.status), total: order.total })),
-      unread: await messages.countUnread(),
-    };
-  }));
-  router.post('/chats/:chatId', ...ownerAuth, chatMessageValidator, jsonRoute(async (request) => {
-    const { chatId, text } = request.validated;
-    const hasWrittenBefore = (await database.message.count({ where: { chat_id: chatId } })) > 0 || (await database.order.count({ where: { chat_id: chatId } })) > 0;
-    if (!hasWrittenBefore) throw new Error('Этот покупатель ещё не писал магазину');
-    try {
-      await sendToBuyer(bot, chatId, { text });
-    } catch (sendError) {
-      throw new Error('Telegram не доставил сообщение: ' + sendError.message);
-    }
-    return { messages: await messages.getChatHistory(chatId) };
-  }));
+  router.get(
+    '/chats',
+    ...ownerAuth,
+    jsonRoute(async () => ({ chats: await messages.listChats(), unread: await messages.countUnread() })),
+  );
+  router.get(
+    '/chats/:chatId',
+    ...ownerAuth,
+    chatIdValidator,
+    jsonRoute(async (request) => {
+      const { chatId } = request.validated;
+      await messages.markChatRead(chatId);
+      const buyerOrders = await database.order.findMany({
+        where: { chat_id: chatId },
+        orderBy: { id: 'desc' },
+        take: CHAT_ORDERS_LIMIT,
+        select: { id: true, order_code: true, status: true, total: true },
+      });
+      return {
+        name: (await customers.getName(chatId)) || '',
+        messages: await messages.getChatHistory(chatId),
+        orders: buyerOrders.map((order) => ({
+          id: order.id,
+          code: order.order_code || String(order.id),
+          status: orders.baseStatus(order.status),
+          total: order.total,
+        })),
+        unread: await messages.countUnread(),
+      };
+    }),
+  );
+  router.post(
+    '/chats/:chatId',
+    ...ownerAuth,
+    chatMessageValidator,
+    jsonRoute(async (request) => {
+      const { chatId, text } = request.validated;
+      const hasWrittenBefore =
+        (await database.message.count({ where: { chat_id: chatId } })) > 0 ||
+        (await database.order.count({ where: { chat_id: chatId } })) > 0;
+      if (!hasWrittenBefore) throw new Error('Этот покупатель ещё не писал магазину');
+      try {
+        await sendToBuyer(bot, chatId, { text });
+      } catch (sendError) {
+        throw new Error('Telegram не доставил сообщение: ' + sendError.message);
+      }
+      return { messages: await messages.getChatHistory(chatId) };
+    }),
+  );
   // Фото из переписки хранит Telegram — отдаём через сервер, только владелице
-  router.get('/photo/:fileId', ...ownerAuth, asyncHandler(async (request, response) => {
-    try {
-      if (!(await messages.isKnownPhoto(request.params.fileId))) return response.sendStatus(404);
-      const fileLink = await bot.telegram.getFileLink(request.params.fileId);
-      const photoResponse = await axios.get(String(fileLink), { responseType: 'arraybuffer', timeout: 15000 });
-      return response.set({ 'Content-Type': photoResponse.headers['content-type'] || 'image/jpeg', 'Cache-Control': 'private, max-age=86400' })
-        .send(Buffer.from(photoResponse.data));
-    } catch {
-      return response.sendStatus(404);
-    }
-  }));
+  router.get(
+    '/photo/:fileId',
+    ...ownerAuth,
+    asyncHandler(async (request, response) => {
+      try {
+        if (!(await messages.isKnownPhoto(request.params.fileId))) return response.sendStatus(404);
+        const fileLink = await bot.telegram.getFileLink(request.params.fileId);
+        const photoResponse = await axios.get(String(fileLink), { responseType: 'arraybuffer', timeout: 15000 });
+        return response
+          .set({
+            'Content-Type': photoResponse.headers['content-type'] || 'image/jpeg',
+            'Cache-Control': 'private, max-age=86400',
+          })
+          .send(Buffer.from(photoResponse.data));
+      } catch {
+        return response.sendStatus(404);
+      }
+    }),
+  );
 
   // ───────── ⚙️ Настройки доставки ─────────
   router.get('/settings', ...ownerAuth, jsonRoute(buildSettings));
 
-  router.post('/delivery', ...ownerAuth, deliverySettingsValidator, jsonRoute(async (request) => {
-    await setSetting('delivery', request.validated.deliverySettings);
-    return buildSettings();
-  }));
+  router.post(
+    '/delivery',
+    ...ownerAuth,
+    deliverySettingsValidator,
+    jsonRoute(async (request) => {
+      await setSetting('delivery', request.validated.deliverySettings);
+      return buildSettings();
+    }),
+  );
 
   // СДЭК / Почта и доставка по расстоянию
-  router.post('/delivery2', ...ownerAuth, deliveryOptionsValidator, jsonRoute(async (request) => {
-    const { postEnabled, carriers, distanceEnabled, distanceTiers, originAddress } = request.validated;
-    const currentOptions = await delivery.getDeliveryOptions();
-    const distanceOptions = { ...currentOptions.distance, enabled: distanceEnabled, ...(distanceTiers ? { tiers: distanceTiers } : {}) };
-    if (originAddress && originAddress !== currentOptions.distance.origin.address) {
-      const originPoint = await delivery.geocode(originAddress).catch(() => null);
-      if (!originPoint) throw new Error('Не нашла этот адрес на карте. Напишите город, улицу и дом полностью');
-      distanceOptions.origin = { address: originAddress, lat: originPoint.lat, lon: originPoint.lon };
-    }
-    if (distanceOptions.enabled && distanceOptions.origin.lat == null) throw new Error('Для доставки по расстоянию укажите адрес, откуда вы отправляете');
-    await delivery.saveDeliveryOptions({ post: { enabled: postEnabled, carriers: carriers ?? currentOptions.post.carriers }, distance: distanceOptions });
-    return buildSettings();
-  }));
+  router.post(
+    '/delivery2',
+    ...ownerAuth,
+    deliveryOptionsValidator,
+    jsonRoute(async (request) => {
+      const { postEnabled, carriers, distanceEnabled, distanceTiers, originAddress } = request.validated;
+      const currentOptions = await delivery.getDeliveryOptions();
+      const distanceOptions = {
+        ...currentOptions.distance,
+        enabled: distanceEnabled,
+        ...(distanceTiers ? { tiers: distanceTiers } : {}),
+      };
+      if (originAddress && originAddress !== currentOptions.distance.origin.address) {
+        const originPoint = await delivery.geocode(originAddress).catch(() => null);
+        if (!originPoint) throw new Error('Не нашла этот адрес на карте. Напишите город, улицу и дом полностью');
+        distanceOptions.origin = { address: originAddress, lat: originPoint.lat, lon: originPoint.lon };
+      }
+      if (distanceOptions.enabled && distanceOptions.origin.lat == null)
+        throw new Error('Для доставки по расстоянию укажите адрес, откуда вы отправляете');
+      await delivery.saveDeliveryOptions({
+        post: { enabled: postEnabled, carriers: carriers ?? currentOptions.post.carriers },
+        distance: distanceOptions,
+      });
+      return buildSettings();
+    }),
+  );
 
-  router.post('/cities', ...ownerAuth, cityValidator, jsonRoute(async (request) => {
-    const { rateId, city, price, isActive } = request.validated;
-    if (rateId) {
-      // city в базе с COLLATE NOCASE — «Moscow» и «moscow» считаются одним городом
-      const sameNameRate = await database.deliveryRate.findFirst({ where: { city, id: { not: rateId } }, select: { id: true } });
-      if (sameNameRate) throw new Error('Такой город уже есть');
-      await database.deliveryRate.update({ where: { id: rateId }, data: { city, price, active: isActive ? 1 : 0 } });
-    } else {
-      await database.deliveryRate.upsert({ where: { city }, create: { city, price }, update: { price, active: 1 } });
-    }
-    return buildSettings();
-  }));
-  router.post('/cities/:id/delete', ...ownerAuth, idParamValidator('rateId'), jsonRoute(async (request) => {
-    await database.deliveryRate.deleteMany({ where: { id: request.validated.rateId } });
-    return buildSettings();
-  }));
+  router.post(
+    '/cities',
+    ...ownerAuth,
+    cityValidator,
+    jsonRoute(async (request) => {
+      const { rateId, city, price, isActive } = request.validated;
+      if (rateId) {
+        // city в базе с COLLATE NOCASE — «Moscow» и «moscow» считаются одним городом
+        const sameNameRate = await database.deliveryRate.findFirst({
+          where: { city, id: { not: rateId } },
+          select: { id: true },
+        });
+        if (sameNameRate) throw new Error('Такой город уже есть');
+        await database.deliveryRate.update({ where: { id: rateId }, data: { city, price, active: isActive ? 1 : 0 } });
+      } else {
+        await database.deliveryRate.upsert({ where: { city }, create: { city, price }, update: { price, active: 1 } });
+      }
+      return buildSettings();
+    }),
+  );
+  router.post(
+    '/cities/:id/delete',
+    ...ownerAuth,
+    idParamValidator('rateId'),
+    jsonRoute(async (request) => {
+      await database.deliveryRate.deleteMany({ where: { id: request.validated.rateId } });
+      return buildSettings();
+    }),
+  );
 
   // ───────── 🎟 Промокоды ─────────
-  router.post('/promos', ...ownerAuth, promoCodeValidator, jsonRoute(async (request) => {
-    const { code, discountPercent, maxUses } = request.validated;
-    try {
-      await database.promoCode.create({ data: { code, discount_percent: discountPercent, max_uses: maxUses } });
-    } catch (createError) {
-      if (createError.code === 'P2002' || String(createError.message).includes('UNIQUE')) throw new Error(`Промокод ${code} уже есть`);
-      throw createError;
-    }
-    return buildSettings();
-  }));
-  router.post('/promos/:id', ...ownerAuth, promoToggleValidator, jsonRoute(async (request) => {
-    await database.promoCode.updateMany({ where: { id: request.validated.promoId }, data: { active: request.validated.isActive ? 1 : 0 } });
-    return buildSettings();
-  }));
-  router.post('/promos/:id/delete', ...ownerAuth, idParamValidator('promoId'), jsonRoute(async (request) => {
-    await database.promoCode.deleteMany({ where: { id: request.validated.promoId } });
-    return buildSettings();
-  }));
+  router.post(
+    '/promos',
+    ...ownerAuth,
+    promoCodeValidator,
+    jsonRoute(async (request) => {
+      const { code, discountPercent, maxUses } = request.validated;
+      try {
+        await database.promoCode.create({ data: { code, discount_percent: discountPercent, max_uses: maxUses } });
+      } catch (createError) {
+        if (createError.code === 'P2002' || String(createError.message).includes('UNIQUE'))
+          throw new Error(`Промокод ${code} уже есть`);
+        throw createError;
+      }
+      return buildSettings();
+    }),
+  );
+  router.post(
+    '/promos/:id',
+    ...ownerAuth,
+    promoToggleValidator,
+    jsonRoute(async (request) => {
+      await database.promoCode.updateMany({
+        where: { id: request.validated.promoId },
+        data: { active: request.validated.isActive ? 1 : 0 },
+      });
+      return buildSettings();
+    }),
+  );
+  router.post(
+    '/promos/:id/delete',
+    ...ownerAuth,
+    idParamValidator('promoId'),
+    jsonRoute(async (request) => {
+      await database.promoCode.deleteMany({ where: { id: request.validated.promoId } });
+      return buildSettings();
+    }),
+  );
 
   return router;
 }

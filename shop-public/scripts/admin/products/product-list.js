@@ -16,7 +16,12 @@ const TOOLBAR_HTML = `<div style="display:flex;gap:8px;margin-bottom:12px"><butt
 
 function priceSummary(product) {
   if (!product.unit) return formatRubles(product.price);
-  return `<b>${product.unit === 'ml' ? 'на объём' : 'на вес'}</b> · ` + formatRubles(product.price * 100) + '/100 ' + unitShortName(product.unit);
+  return (
+    `<b>${product.unit === 'ml' ? 'на объём' : 'на вес'}</b> · ` +
+    formatRubles(product.price * 100) +
+    '/100 ' +
+    unitShortName(product.unit)
+  );
 }
 
 function stockSummary(product) {
@@ -37,15 +42,22 @@ const productRowHtml = (product) => `
 
 export function renderAdminProducts() {
   const withoutPhoto = adminState.products.filter((product) => !product.has_photo).length;
-  getElement('admBody').innerHTML = TOOLBAR_HTML
-    + (withoutPhoto ? `<div class="note" style="margin:0 0 10px">Без фото: ${withoutPhoto} — нажмите на товар и «📷 Фото»</div>` : '')
-    + adminState.products.map(productRowHtml).join('');
+  getElement('admBody').innerHTML =
+    TOOLBAR_HTML +
+    (withoutPhoto
+      ? `<div class="note" style="margin:0 0 10px">Без фото: ${withoutPhoto} — нажмите на товар и «📷 Фото»</div>`
+      : '') +
+    adminState.products.map(productRowHtml).join('');
   listenToImportFile(getElement('impInput'));
 }
 
 /** После изменений товаров: обновить список в админке и каталог покупателя (вместе с корзиной) */
 export async function reloadProducts() {
-  try { adminState.products = (await callApi('/admin/products')).products; } catch { /* покажем старый список */ }
+  try {
+    adminState.products = (await callApi('/admin/products')).products;
+  } catch {
+    /* покажем старый список */
+  }
   try {
     const catalog = await callApi('/catalog');
     state.products = catalog.products;
@@ -53,6 +65,8 @@ export async function reloadProducts() {
     renderCategoryChips();
     renderProductGrid();
     renderCart();
-  } catch { /* каталог обновится при следующем открытии */ }
+  } catch {
+    /* каталог обновится при следующем открытии */
+  }
   if (state.activeTab === 'admin' && adminState.section === 'products') renderAdminProducts();
 }

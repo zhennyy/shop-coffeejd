@@ -15,7 +15,9 @@ async function payExistingOrder(orderId) {
   try {
     const payment = await callApi(`/orders/${orderId}/pay`, {}, 1);
     openPaymentLink(payment.pay_url);
-  } catch (error) { showToast(error.message); }
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 async function repeatOrder(orderId) {
@@ -44,12 +46,18 @@ async function changeSubscription(subscriptionId, change) {
 
 /** Ошибку любого действия показываем во всплывающем сообщении */
 const showingErrors = (action) => async (element) => {
-  try { await action(element); } catch (error) { showToast(error.message); }
+  try {
+    await action(element);
+  } catch (error) {
+    showToast(error.message);
+  }
 };
 
 export const orderActions = {
   'pay-existing-order': (element) => payExistingOrder(Number(element.dataset.orderId)),
   'repeat-order': showingErrors((element) => repeatOrder(element.dataset.orderId)),
   'subscribe-to-order': showingErrors((element) => subscribeToOrder(Number(element.dataset.orderId))),
-  'change-subscription': showingErrors((element) => changeSubscription(element.dataset.subscriptionId, element.dataset.change)),
+  'change-subscription': showingErrors((element) =>
+    changeSubscription(element.dataset.subscriptionId, element.dataset.change),
+  ),
 };

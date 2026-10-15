@@ -21,8 +21,16 @@ async function runOwnerScreens(runner, shop) {
   await page.click('#trackGo');
   await snap(page, 'o05-order-shipped', { keepToast: true });
   const shipped = await shop.database.order.findFirst({ where: { address: { contains: 'Невский' } } });
-  check('статус заказа сменился на «отправлен» с трек-номером', shipped.status === 'shipped' && shipped.track === 'RA123456789RU', `${shipped.status} ${shipped.track}`);
-  await page.locator('#admBody .order', { hasText: 'Самовывоз' }).first().locator('.btn', { hasText: 'Начать сборку' }).click();
+  check(
+    'статус заказа сменился на «отправлен» с трек-номером',
+    shipped.status === 'shipped' && shipped.track === 'RA123456789RU',
+    `${shipped.status} ${shipped.track}`,
+  );
+  await page
+    .locator('#admBody .order', { hasText: 'Самовывоз' })
+    .first()
+    .locator('.btn', { hasText: 'Начать сборку' })
+    .click();
   await snap(page, 'o06-order-assembling');
 
   await page.locator('.chips.adm .chip', { hasText: 'Статистика' }).click();
@@ -54,7 +62,11 @@ async function runOwnerScreens(runner, shop) {
   await page.locator('#pform .btn', { hasText: 'Сохранить' }).click();
   await snap(page, 'o15-products-after-edit', { keepToast: true });
   const edited = await shop.database.product.findFirst({ where: { name: { startsWith: 'Улун Те Гуан Инь' } } });
-  check('товар изменён', edited.name === 'Улун Те Гуан Инь, новый урожай' && edited.stock === 42, `${edited.name} ${edited.stock}`);
+  check(
+    'товар изменён',
+    edited.name === 'Улун Те Гуан Инь, новый урожай' && edited.stock === 42,
+    `${edited.name} ${edited.stock}`,
+  );
 
   await page.locator('.chips.adm .chip', { hasText: 'Чаты' }).click();
   await page.waitForSelector('#admBody .aline');

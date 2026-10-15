@@ -10,7 +10,10 @@ import { subscriptionsHtml } from './subscriptions.js';
 function statusExplanation(order) {
   const isPickup = order.pickup;
   const explanations = {
-    awaiting_payment: inLanguage('Ждём оплату. Нажмите «Оплатить» ниже — ссылка действует недолго.', 'Waiting for payment. Tap Pay below.'),
+    awaiting_payment: inLanguage(
+      'Ждём оплату. Нажмите «Оплатить» ниже — ссылка действует недолго.',
+      'Waiting for payment. Tap Pay below.',
+    ),
     paid: inLanguage('Оплата получена. Скоро начнём собирать заказ.', 'Payment received. We will start packing soon.'),
     assembling: inLanguage('Собираем ваш заказ.', 'We are packing your order.'),
     shipped: isPickup
@@ -19,7 +22,10 @@ function statusExplanation(order) {
     delivered: isPickup
       ? inLanguage('Заказ выдан. Спасибо, что выбрали нас!', 'Picked up. Thank you!')
       : inLanguage('Заказ доставлен. Приятного!', 'Delivered. Enjoy!'),
-    cancelled: inLanguage('Заказ отменён. Если оплата была — деньги вернутся.', 'Order cancelled. If paid, you will be refunded.'),
+    cancelled: inLanguage(
+      'Заказ отменён. Если оплата была — деньги вернутся.',
+      'Order cancelled. If paid, you will be refunded.',
+    ),
   };
   return explanations[order.status] || '';
 }
@@ -31,14 +37,17 @@ function progressStepsHtml(order) {
     ? ['Paid', 'Packing', order.pickup ? 'Ready' : 'Shipped', order.pickup ? 'Picked up' : 'Delivered']
     : ['Оплачен', 'Собираем', order.pickup ? 'Готов' : 'Отправлен', order.pickup ? 'Получен' : 'Доставлен'];
   const LAST_STEP = 3;
-  return `<div class="steps">${names.map((name, index) => {
-    const stepClass = index < order.step || order.step === LAST_STEP ? 'done' : index === order.step ? 'now' : '';
-    return `<div class="${stepClass}">${name}</div>`;
-  }).join('')}</div>`;
+  return `<div class="steps">${names
+    .map((name, index) => {
+      const stepClass = index < order.step || order.step === LAST_STEP ? 'done' : index === order.step ? 'now' : '';
+      return `<div class="${stepClass}">${name}</div>`;
+    })
+    .join('')}</div>`;
 }
 
 /** «Название, 250 г» или «Название × 2» */
-export const orderItemLabel = (item) => escapeHtml(item.name) + (item.unit ? ', ' + formatAmount(item.qty, item.unit) : ' × ' + item.qty);
+export const orderItemLabel = (item) =>
+  escapeHtml(item.name) + (item.unit ? ', ' + formatAmount(item.qty, item.unit) : ' × ' + item.qty);
 
 function orderHtml(order) {
   const canRepeat = order.status !== 'awaiting_payment' && order.status !== 'cancelled';
@@ -68,8 +77,14 @@ export async function loadOrders() {
     view.innerHTML = `<h1>${texts().ordersTitle}</h1><div class="empty">${escapeHtml(error.message)}</div>`;
     return;
   }
-  try { subscriptionData = await callApi('/subscriptions'); } catch { /* подписки не обязательны для показа заказов */ }
+  try {
+    subscriptionData = await callApi('/subscriptions');
+  } catch {
+    /* подписки не обязательны для показа заказов */
+  }
   state.subscriptionIntervals = subscriptionData.intervals;
-  const ordersHtml = state.orders.length ? state.orders.map(orderHtml).join('') : `<div class="empty"><b>📦</b>${texts().ordersEmpty}</div>`;
+  const ordersHtml = state.orders.length
+    ? state.orders.map(orderHtml).join('')
+    : `<div class="empty"><b>📦</b>${texts().ordersEmpty}</div>`;
   view.innerHTML = `<h1>${texts().ordersTitle}</h1>` + subscriptionsHtml(subscriptionData.subscriptions) + ordersHtml;
 }

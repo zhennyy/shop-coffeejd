@@ -20,7 +20,10 @@ before(async () => {
   process.env.CRM_URL = CRM_URL;
   const fakeYookassaPost = axios.post;
   axios.post = async (url, body, options) => {
-    if (url === CRM_URL) { crmRequests.push({ body, headers: options.headers }); return { data: {} }; }
+    if (url === CRM_URL) {
+      crmRequests.push({ body, headers: options.headers });
+      return { data: {} };
+    }
     return fakeYookassaPost(url, body, options);
   };
   stopCrmSync = startCrmSync();

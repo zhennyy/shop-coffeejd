@@ -11,15 +11,22 @@ async function startPayment(orderId) {
   const orderCode = order.order_code || String(order.id);
   let fiscalReceipt;
   if (receipt.isEnabled()) {
-    const receiptLines = (await getOrderItems([orderId]))
-      .map((orderItem) => asReceiptLine({ name: orderItem.name || 'Товар', unit: orderItem.unit }, orderItem.quantity, orderItem.price));
+    const receiptLines = (await getOrderItems([orderId])).map((orderItem) =>
+      asReceiptLine({ name: orderItem.name || 'Товар', unit: orderItem.unit }, orderItem.quantity, orderItem.price),
+    );
     const deliveryCost = order.delivery_cost || 0;
     fiscalReceipt = receipt.buildReceipt({
-      items: receiptLines, goodsTotal: order.total - deliveryCost, delivery: deliveryCost, contact: receipt.contactFrom(order.contact),
+      items: receiptLines,
+      goodsTotal: order.total - deliveryCost,
+      delivery: deliveryCost,
+      contact: receipt.contactFrom(order.contact),
     });
   }
   const payment = await createPayment(orderId, order.total / 100, `Заказ #${orderCode} в CoFFeeJD`, fiscalReceipt);
-  await database.order.update({ where: { id: orderId }, data: { status: `awaiting_payment:${payment.id}`, payment_id: payment.id } });
+  await database.order.update({
+    where: { id: orderId },
+    data: { status: `awaiting_payment:${payment.id}`, payment_id: payment.id },
+  });
   return payment;
 }
 

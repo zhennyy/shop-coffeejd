@@ -10,7 +10,10 @@ const moscowHourNow = () => new Date(Date.now() + MOSCOW_OFFSET_MS).getUTCHours(
 
 function startSchedulers(bot) {
   const timers = [
-    setInterval(() => checkLowStock(bot).catch((stockError) => console.error('Склад:', stockError.message)), ONE_HOUR_MS),
+    setInterval(
+      () => checkLowStock(bot).catch((stockError) => console.error('Склад:', stockError.message)),
+      ONE_HOUR_MS,
+    ),
     setInterval(() => {
       if (moscowHourNow() < QUIET_HOURS_END) return;
       runDueSubscriptions(bot).catch((subscriptionError) => console.error('Подписки:', subscriptionError.message));

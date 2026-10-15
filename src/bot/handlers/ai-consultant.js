@@ -35,7 +35,9 @@ function consumeAiQuota(userId) {
 }
 
 function describeProductForAi(product) {
-  const price = product.unit ? `${formatPrice(product.price * 100)} / 100 ${unitLabel(product)}` : formatPrice(product.price);
+  const price = product.unit
+    ? `${formatPrice(product.price * 100)} / 100 ${unitLabel(product)}`
+    : formatPrice(product.price);
   return `#${product.id} ${product.name} (${product.category}) — ${price}. ${product.description || ''}`;
 }
 
@@ -47,9 +49,10 @@ async function getAiRecommendation(userQuery, language, userId = 'chat') {
     where: { stock: { gt: 0 }, is_addon: 0, ...(process.env.SHOP_URL ? {} : { unit: null }) },
     select: { id: true, name: true, description: true, price: true, category: true, stock: true, unit: true },
   });
-  const languageInstruction = language === 'en'
-    ? 'Answer in English, friendly and to the point, no markdown formatting.'
-    : 'Отвечай по-русски, дружелюбно и по делу, без markdown-разметки.';
+  const languageInstruction =
+    language === 'en'
+      ? 'Answer in English, friendly and to the point, no markdown formatting.'
+      : 'Отвечай по-русски, дружелюбно и по делу, без markdown-разметки.';
   const systemPrompt =
     'Ты — консультант интернет-магазина свежеобжаренного кофе и чая CoFFeeJD. ' +
     'Ниже дан текущий каталог товаров в наличии. Подбери покупателю 1-3 подходящих товара ' +
@@ -62,8 +65,19 @@ async function getAiRecommendation(userQuery, language, userId = 'chat') {
   const response = await axios.post(
     // ANTHROPIC_BASE_URL — свой адрес-посредник для Claude (нужен на серверах в России)
     (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '') + '/v1/messages',
-    { model: CLAUDE_MODEL, max_tokens: MAX_ANSWER_TOKENS, system: systemPrompt, messages: [{ role: 'user', content: userQuery }] },
-    { headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } },
+    {
+      model: CLAUDE_MODEL,
+      max_tokens: MAX_ANSWER_TOKENS,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userQuery }],
+    },
+    {
+      headers: {
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+    },
   );
 
   // ответ может содержать служебный блок "thinking" перед текстом — берём именно текстовый блок
@@ -74,7 +88,9 @@ async function getAiRecommendation(userQuery, language, userId = 'chat') {
   if (recommendationsMatch) {
     const allowedIds = new Set(availableProducts.map((product) => product.id)); // только товары, которые видел ИИ
     const mentionedIds = [...recommendationsMatch[1].matchAll(/(\d+)/g)].map((idMatch) => parseInt(idMatch[1], 10));
-    productIds = [...new Set(mentionedIds)].filter((productId) => allowedIds.has(productId)).slice(0, MAX_RECOMMENDED_PRODUCTS);
+    productIds = [...new Set(mentionedIds)]
+      .filter((productId) => allowedIds.has(productId))
+      .slice(0, MAX_RECOMMENDED_PRODUCTS);
     adviceText = answerText.slice(0, recommendationsMatch.index).trim();
   }
   if (!adviceText) adviceText = productIds.length ? translate(language, 'aiHere') : translate(language, 'aiNoMatch');
@@ -97,9 +113,14 @@ async function handleAiConsultInput(context) {
   const query = context.message.text.trim();
   if (!query) return;
   const thinkingMessage = await context.reply(translate(language, 'aiThinking'));
-  const removeThinkingMessage = () => context.telegram.deleteMessage(context.chat.id, thinkingMessage.message_id).catch(() => {});
+  const removeThinkingMessage = () =>
+    context.telegram.deleteMessage(context.chat.id, thinkingMessage.message_id).catch(() => {});
   try {
-    const { adviceText, productIds } = await getAiRecommendation(query.slice(0, MAX_QUERY_LENGTH), language, context.from.id);
+    const { adviceText, productIds } = await getAiRecommendation(
+      query.slice(0, MAX_QUERY_LENGTH),
+      language,
+      context.from.id,
+    );
     await removeThinkingMessage();
     await context.reply(adviceText || translate(language, 'aiNoRecommendation'));
     for (const productId of productIds) {
@@ -109,7 +130,11 @@ async function handleAiConsultInput(context) {
   } catch (aiError) {
     await removeThinkingMessage();
     if (aiError.code === 'AI_LIMIT') {
-      return context.reply(language === 'en' ? 'The AI consultant has reached its limit for now — please try again later.' : 'ИИ-консультант на сегодня устал 🙂 Попробуйте позже.');
+      return context.reply(
+        language === 'en'
+          ? 'The AI consultant has reached its limit for now — please try again later.'
+          : 'ИИ-консультант на сегодня устал 🙂 Попробуйте позже.',
+      );
     }
     console.error('Ошибка AI-консультанта:', aiError.response?.status || aiError.message);
     await context.reply(translate(language, 'aiError'));

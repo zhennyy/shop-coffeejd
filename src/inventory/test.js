@@ -31,7 +31,10 @@ test('Excel (.xlsx): выгрузка → правка → загрузка; н�
   assert.deepEqual(unchangedImport.errors, []);
   let editedRow = worksheet.getRow(2);
   for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
-    if (worksheet.getRow(rowNumber).getCell(9).value === 'товар') { editedRow = worksheet.getRow(rowNumber); break; }
+    if (worksheet.getRow(rowNumber).getCell(9).value === 'товар') {
+      editedRow = worksheet.getRow(rowNumber);
+      break;
+    }
   }
   const editedProductId = editedRow.getCell(1).value;
   const oldStock = (await actions.findProduct(editedProductId)).stock;
@@ -53,28 +56,53 @@ test('Excel (.xlsx): выгрузка → правка → загрузка; н�
 
 test('CSV: набор по составу', async () => {
   const component = await shop.database.product.findFirst({ where: { stock: { gt: 5 } }, select: { id: true } });
-  const importResult = await stockFiles.importCsv(`название;цена_руб;остаток;тип;состав\nНабор из CSV;1000;0;набор;${component.id}×2`);
+  const importResult = await stockFiles.importCsv(
+    `название;цена_руб;остаток;тип;состав\nНабор из CSV;1000;0;набор;${component.id}×2`,
+  );
   assert.equal(importResult.created, 1, JSON.stringify(importResult));
   const bundle = await findProductByName('Набор из CSV');
   assert.equal((await inventory.getBundleParts(bundle.id))[0].qty, 2);
   assert.equal(bundle.stock, Math.floor((await actions.findProduct(component.id)).stock / 2));
-  const brokenImport = await stockFiles.importCsv('название;цена_руб;остаток;тип;состав\nКривой;100;0;набор;Нет такого×2');
+  const brokenImport = await stockFiles.importCsv(
+    'название;цена_руб;остаток;тип;состав\nКривой;100;0;набор;Нет такого×2',
+  );
   assert.match(brokenImport.errors[0], /такого товара нет/);
 });
 
 test('на объём (мл) и пример «чай — 10 сортов» загружается целиком', async () => {
-  const volumeProductId = await actions.createProduct({ name: 'Сироп на розлив', unit: 'ml', price: 180, stock: 5000, step: 50, min_qty: 100 });
+  const volumeProductId = await actions.createProduct({
+    name: 'Сироп на розлив',
+    unit: 'ml',
+    price: 180,
+    stock: 5000,
+    step: 50,
+    min_qty: 100,
+  });
   assert.equal((await actions.findProduct(volumeProductId)).unit, 'ml');
-  assert.equal((await shop.call(6001, 'POST', '/shop-api/cart', { product_id: volumeProductId, qty: 125 })).status, 400);
-  assert.equal((await shop.call(6001, 'POST', '/shop-api/cart', { product_id: volumeProductId, qty: 250 })).status, 200);
-  const importResult = await stockFiles.importXlsx(fs.readFileSync(path.join(__dirname, '..', '..', 'примеры', 'чай-10-сортов.xlsx')));
+  assert.equal(
+    (await shop.call(6001, 'POST', '/shop-api/cart', { product_id: volumeProductId, qty: 125 })).status,
+    400,
+  );
+  assert.equal(
+    (await shop.call(6001, 'POST', '/shop-api/cart', { product_id: volumeProductId, qty: 250 })).status,
+    200,
+  );
+  const importResult = await stockFiles.importXlsx(
+    fs.readFileSync(path.join(__dirname, '..', '..', 'примеры', 'чай-10-сортов.xlsx')),
+  );
   assert.deepEqual(importResult.errors, []);
   assert.equal(importResult.created, 19);
-  const icedTea = await shop.database.product.findFirst({ where: { category: 'Чай', name: { contains: 'Холодный чай' } } });
+  const icedTea = await shop.database.product.findFirst({
+    where: { category: 'Чай', name: { contains: 'Холодный чай' } },
+  });
   assert.equal(icedTea.unit, 'ml');
   // 17 строк = 10 карточек чая (+2 набора лежат в категории «Наборы»)
   const importedProducts = await shop.database.product.findMany({ orderBy: { id: 'desc' }, take: 19 });
-  const teaCards = new Set(importedProducts.filter((product) => product.category === 'Чай').map((product) => product.group_key ?? product.name));
+  const teaCards = new Set(
+    importedProducts
+      .filter((product) => product.category === 'Чай')
+      .map((product) => product.group_key ?? product.name),
+  );
   assert.equal(teaCards.size, 10);
   const bundle = await findProductByName('Набор «Утёсный вечер»');
   const bundleParts = await inventory.getBundleParts(bundle.id);

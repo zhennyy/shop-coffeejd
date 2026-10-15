@@ -2,8 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { buildReceipt, contactFrom, normalizePhone } = require('./receipt');
 
-const receiptSum = (fiscalReceipt) => fiscalReceipt.items.reduce(
-  (sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)), 0);
+const receiptSum = (fiscalReceipt) =>
+  fiscalReceipt.items.reduce(
+    (sum, position) =>
+      sum + Math.round(parseFloat(position.amount.value) * 100) * Math.round(parseFloat(position.quantity)),
+    0,
+  );
 
 test('чек сходится с суммой при любых скидках и количествах', () => {
   const contact = { phone: '79001112233' };
@@ -12,11 +16,21 @@ test('чек сходится с суммой при любых скидках �
     for (let quantity = 1; quantity <= 7; quantity++) {
       for (const discountPercent of [0, 5, 10, 33, 50, 99]) {
         for (const delivery of [0, 25000, 33333]) {
-          const items = [{ name: 'A', quantity, price: price * 97 }, { name: 'B', quantity: 3, price: 12345 }];
-          const totalBeforeDiscount = items.reduce((sum, receiptItem) => sum + receiptItem.price * receiptItem.quantity, 0);
-          const goodsTotal = Math.round(totalBeforeDiscount * (100 - discountPercent) / 100);
+          const items = [
+            { name: 'A', quantity, price: price * 97 },
+            { name: 'B', quantity: 3, price: 12345 },
+          ];
+          const totalBeforeDiscount = items.reduce(
+            (sum, receiptItem) => sum + receiptItem.price * receiptItem.quantity,
+            0,
+          );
+          const goodsTotal = Math.round((totalBeforeDiscount * (100 - discountPercent)) / 100);
           const fiscalReceipt = buildReceipt({ items, goodsTotal, delivery, contact });
-          assert.equal(receiptSum(fiscalReceipt), goodsTotal + delivery, `price=${price} quantity=${quantity} discount=${discountPercent} delivery=${delivery}`);
+          assert.equal(
+            receiptSum(fiscalReceipt),
+            goodsTotal + delivery,
+            `price=${price} quantity=${quantity} discount=${discountPercent} delivery=${delivery}`,
+          );
           assert.ok(fiscalReceipt.items.every((position) => parseFloat(position.amount.value) > 0));
           checkedCombinations++;
         }
@@ -27,7 +41,12 @@ test('чек сходится с суммой при любых скидках �
 });
 
 test('доставка отдельной позицией-услугой, товары — commodity', () => {
-  const fiscalReceipt = buildReceipt({ items: [{ name: 'Кофе', quantity: 2, price: 100000 }], goodsTotal: 200000, delivery: 30000, contact: { email: 'a@b.ru' } });
+  const fiscalReceipt = buildReceipt({
+    items: [{ name: 'Кофе', quantity: 2, price: 100000 }],
+    goodsTotal: 200000,
+    delivery: 30000,
+    contact: { email: 'a@b.ru' },
+  });
   assert.equal(fiscalReceipt.items.at(-1).payment_subject, 'service');
   assert.equal(fiscalReceipt.items[0].payment_subject, 'commodity');
   assert.deepEqual(fiscalReceipt.customer, { email: 'a@b.ru' });
@@ -35,7 +54,10 @@ test('доставка отдельной позицией-услугой, то�
 });
 
 test('без контакта чек не строится', () => {
-  assert.throws(() => buildReceipt({ items: [{ name: 'A', quantity: 1, price: 100 }], goodsTotal: 100, contact: null }), /телефон/);
+  assert.throws(
+    () => buildReceipt({ items: [{ name: 'A', quantity: 1, price: 100 }], goodsTotal: 100, contact: null }),
+    /телефон/,
+  );
 });
 
 test('телефон и e-mail распознаются', () => {
@@ -49,6 +71,10 @@ test('телефон и e-mail распознаются', () => {
 });
 
 test('длинное название обрезается до 128 символов', () => {
-  const fiscalReceipt = buildReceipt({ items: [{ name: 'я'.repeat(300), quantity: 1, price: 5000 }], goodsTotal: 5000, contact: { phone: '79001112233' } });
+  const fiscalReceipt = buildReceipt({
+    items: [{ name: 'я'.repeat(300), quantity: 1, price: 5000 }],
+    goodsTotal: 5000,
+    contact: { phone: '79001112233' },
+  });
   assert.equal(fiscalReceipt.items[0].description.length, 128);
 });

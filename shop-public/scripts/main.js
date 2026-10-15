@@ -6,7 +6,13 @@ import { initTelegram } from './telegram.js';
 import { getElement, escapeHtml } from './utils/dom.js';
 import { registerClickActions, listenForClickActions } from './utils/actions.js';
 import { switchTab, listenToTelegramButtons, navigationActions } from './navigation.js';
-import { renderCatalog, renderInfoStrip, listenToCatalogInputs, catalogActions, LOADING_GRID_HTML } from './catalog/catalog-view.js';
+import {
+  renderCatalog,
+  renderInfoStrip,
+  listenToCatalogInputs,
+  catalogActions,
+  LOADING_GRID_HTML,
+} from './catalog/catalog-view.js';
 import { replaceBrokenPhotos } from './catalog/product-photo.js';
 import { closeSheet, productSheetActions } from './catalog/product-sheet.js';
 import { renderCart, cartActions } from './cart/cart-view.js';
@@ -30,8 +36,12 @@ const BUYER_START_TABS = ['cart', 'orders', 'ai'];
 /** Подписи статичной разметки на текущем языке */
 function applyLanguage() {
   document.documentElement.lang = state.language;
-  document.querySelectorAll('[data-i18n]').forEach((element) => { element.textContent = texts()[element.dataset.i18n]; });
-  document.querySelectorAll('#lang button').forEach((button) => button.classList.toggle('on', button.dataset.lang === state.language));
+  document.querySelectorAll('[data-i18n]').forEach((element) => {
+    element.textContent = texts()[element.dataset.i18n];
+  });
+  document
+    .querySelectorAll('#lang button')
+    .forEach((button) => button.classList.toggle('on', button.dataset.lang === state.language));
   getElement('q').placeholder = texts().search;
   renderAiTexts();
 }
@@ -43,7 +53,9 @@ function switchLanguage(language) {
   renderCatalog();
   renderCart();
   if (state.activeTab === 'orders') loadOrders();
-  callApi('/lang', { lang: language }).catch(() => { /* язык запомнится в следующий раз */ });
+  callApi('/lang', { lang: language }).catch(() => {
+    /* язык запомнится в следующий раз */
+  });
 }
 
 /** Ссылка из бота может сразу открыть вкладку: ?tab=orders, а владелице — ?tab=admin&adm=chats&chat=123 */
@@ -74,10 +86,18 @@ async function loadShop() {
     renderCatalog();
     renderCart();
     // условия доставки нужны для полосы под шапкой и корзины, но не для первого показа
-    callApi('/checkout-info').then((shopInfo) => { state.shopInfo = shopInfo; renderInfoStrip(); renderCart(); }).catch(() => {});
+    callApi('/checkout-info')
+      .then((shopInfo) => {
+        state.shopInfo = shopInfo;
+        renderInfoStrip();
+        renderCart();
+      })
+      .catch(() => {});
     openStartTab();
   } catch (error) {
-    const retryButton = error.fatal ? '' : `<br><br><button class="btn ghost" data-action="retry-loading">${texts().retry}</button>`;
+    const retryButton = error.fatal
+      ? ''
+      : `<br><br><button class="btn ghost" data-action="retry-loading">${texts().retry}</button>`;
     getElement('grid').innerHTML = `<div class="empty"><b>😕</b>${escapeHtml(error.message)}${retryButton}</div>`;
   }
 }
@@ -86,9 +106,22 @@ initTelegram();
 replaceBrokenPhotos();
 // каждый модуль отдаёт свои действия для data-action; совпадение имён registerClickActions не пропустит
 [
-  navigationActions, catalogActions, productSheetActions, cartActions, checkoutActions, orderActions, aiActions,
-  adminPageActions, productEditorActions, bundleEditorActions, catalogFileActions, photoUploadActions,
-  adminOrderActions, statsActions, chatActions, settingsActions,
+  navigationActions,
+  catalogActions,
+  productSheetActions,
+  cartActions,
+  checkoutActions,
+  orderActions,
+  aiActions,
+  adminPageActions,
+  productEditorActions,
+  bundleEditorActions,
+  catalogFileActions,
+  photoUploadActions,
+  adminOrderActions,
+  statsActions,
+  chatActions,
+  settingsActions,
   { 'switch-language': (element) => switchLanguage(element.dataset.lang), 'retry-loading': () => loadShop() },
 ].forEach(registerClickActions);
 listenForClickActions();

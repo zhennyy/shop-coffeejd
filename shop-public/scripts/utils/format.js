@@ -15,7 +15,8 @@ export const formatRubles = (kopecks) => Math.round(kopecks / KOPECKS_IN_RUBLE).
 /** Количество товара на вес/объём: 250 → «250 г», 1500 → «1,5 кг» */
 export function formatAmount(amount, unit = 'g') {
   const names = UNITS[unit] || UNITS.g;
-  if (amount >= 1000) return (amount / 1000).toLocaleString(numberLocale()) + ' ' + (isEnglish() ? names.bigEn : names.bigRu);
+  if (amount >= 1000)
+    return (amount / 1000).toLocaleString(numberLocale()) + ' ' + (isEnglish() ? names.bigEn : names.bigRu);
   return amount + ' ' + (isEnglish() ? names.en : names.ru);
 }
 

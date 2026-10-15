@@ -44,10 +44,15 @@ Webhook ЮKassa: `https://botforall.ru/yookassa-webhook` (общий для вс
 ## Проверка
 
 ```bash
-npm test
+npm test              # автотесты
+npm run lint          # ESLint: ошибки и понятные имена (без однобуквенных переменных)
+npm run format:check  # Prettier: единый стиль кода (npm run format — поправить)
+npm run test:ui       # мини-приложение в браузере (Playwright)
 ```
 
-45 автотестов: заказы, остатки, доставка, чеки, подписки, наборы, Excel, безопасность и сам бот в чате (через подставной Telegram). Тесты лежат рядом с кодом — файл `test.js` в папке модуля или маршрута; `npm test` находит их сам. Тесты не заменяют проверку с настоящей ЮKassa и Telegram.
+52 автотеста: заказы, остатки, доставка, чеки, подписки, наборы, Excel, CRM, безопасность и сам бот в чате (через подставной Telegram). Тесты лежат рядом с кодом — файл `test.js` в папке модуля или маршрута; `npm test` находит их сам. Тесты не заменяют проверку с настоящей ЮKassa и Telegram.
+
+На каждый push и pull request GitHub Actions запускает Prettier, ESLint и тесты (`.github/workflows/ci.yml`).
 
 ## Команды владельца
 

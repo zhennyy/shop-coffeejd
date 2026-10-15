@@ -6,7 +6,21 @@
 const { database, runInTransaction } = require('../database');
 const inventory = require('./index');
 
-const COLUMNS = ['id', 'название', 'вариант', 'вариант2', 'категория', 'цена_руб', 'остаток', 'описание', 'тип', 'для_товаров', 'состав', 'шаг_г', 'мин_г'];
+const COLUMNS = [
+  'id',
+  'название',
+  'вариант',
+  'вариант2',
+  'категория',
+  'цена_руб',
+  'остаток',
+  'описание',
+  'тип',
+  'для_товаров',
+  'состав',
+  'шаг_г',
+  'мин_г',
+];
 const COLUMN_WIDTHS = [6, 30, 12, 12, 14, 11, 9, 40, 9, 22, 18, 7, 7];
 const MAX_FILE_COLUMNS = 30;
 const MAX_STOCK = 1e7;
@@ -33,19 +47,31 @@ function productType(product, bundleIds) {
 // Строки таблицы склада (массив массивов значений)
 async function buildTableRows() {
   const products = await database.product.findMany();
-  products.sort((first, second) => (first.is_addon - second.is_addon)
-    || compareText(first.category, second.category)
-    || compareText(first.group_key ?? first.name, second.group_key ?? second.name)
-    || first.price - second.price);
+  products.sort(
+    (first, second) =>
+      first.is_addon - second.is_addon ||
+      compareText(first.category, second.category) ||
+      compareText(first.group_key ?? first.name, second.group_key ?? second.name) ||
+      first.price - second.price,
+  );
   const bundleIds = await inventory.getBundleIds();
   const tableRows = [];
   for (const product of products) {
     const isSoldByWeight = Boolean(product.unit);
     tableRows.push([
-      product.id, product.group_key || product.name, product.option_label || '', product.option2_label || '', product.category || '',
-      isSoldByWeight ? product.price : product.price / 100, product.stock, product.description || '',
-      productType(product, bundleIds), product.addon_for || '', formatBundleParts(await inventory.getBundleParts(product.id)),
-      isSoldByWeight ? product.step : '', isSoldByWeight ? product.min_qty : '',
+      product.id,
+      product.group_key || product.name,
+      product.option_label || '',
+      product.option2_label || '',
+      product.category || '',
+      isSoldByWeight ? product.price : product.price / 100,
+      product.stock,
+      product.description || '',
+      productType(product, bundleIds),
+      product.addon_for || '',
+      formatBundleParts(await inventory.getBundleParts(product.id)),
+      isSoldByWeight ? product.step : '',
+      isSoldByWeight ? product.min_qty : '',
     ]);
   }
   return tableRows;
@@ -60,7 +86,7 @@ function compareText(first, second) {
 
 async function exportCsv() {
   const lines = (await buildTableRows()).map((tableRow) => tableRow.map(formatCsvCell).join(';'));
-  return '﻿' + [COLUMNS.join(';'), ...lines].join('\r\n'); // «;» и BOM — Excel сразу откроет кириллицу по столбцам
+  return '\uFEFF' + [COLUMNS.join(';'), ...lines].join('\r\n'); // «;» и BOM — Excel сразу откроет кириллицу по столбцам
 }
 
 async function exportXlsx() {
@@ -68,16 +94,21 @@ async function exportXlsx() {
   const workbook = new ExcelJS.Workbook();
   const worksheet = workbook.addWorksheet('Склад');
   worksheet.addRow(COLUMNS).font = { bold: true };
-  for (const tableRow of await buildTableRows()) worksheet.addRow(tableRow.map((value) => (typeof value === 'string' ? protectText(value) : value)));
-  worksheet.columns.forEach((column, columnIndex) => { column.width = COLUMN_WIDTHS[columnIndex]; });
+  for (const tableRow of await buildTableRows())
+    worksheet.addRow(tableRow.map((value) => (typeof value === 'string' ? protectText(value) : value)));
+  worksheet.columns.forEach((column, columnIndex) => {
+    column.width = COLUMN_WIDTHS[columnIndex];
+  });
   worksheet.views = [{ state: 'frozen', ySplit: 1 }];
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
 function parseCsv(csvText) {
-  const text = String(csvText).replace(/^﻿/, '');
+  const text = String(csvText).replace(/^\uFEFF/, '');
   const headerLine = text.split(/\r?\n/, 1)[0] || '';
-  const delimiter = [';', '\t', ','].sort((first, second) => headerLine.split(second).length - headerLine.split(first).length)[0];
+  const delimiter = [';', '\t', ','].sort(
+    (first, second) => headerLine.split(second).length - headerLine.split(first).length,
+  )[0];
   const rows = [];
   let currentRow = [];
   let currentCell = '';
@@ -86,13 +117,19 @@ function parseCsv(csvText) {
     const character = text[position];
     if (insideQuotes) {
       if (character === '"') {
-        if (text[position + 1] === '"') { currentCell += '"'; position++; } else insideQuotes = false;
+        if (text[position + 1] === '"') {
+          currentCell += '"';
+          position++;
+        } else insideQuotes = false;
       } else currentCell += character;
     } else if (character === '"') insideQuotes = true;
-    else if (character === delimiter) { currentRow.push(currentCell); currentCell = ''; }
-    else if (character === '\n' || character === '\r') {
+    else if (character === delimiter) {
+      currentRow.push(currentCell);
+      currentCell = '';
+    } else if (character === '\n' || character === '\r') {
       if (character === '\r' && text[position + 1] === '\n') position++;
-      currentRow.push(currentCell); currentCell = '';
+      currentRow.push(currentCell);
+      currentCell = '';
       if (currentRow.some((cell) => cell.trim())) rows.push(currentRow);
       currentRow = [];
     } else currentCell += character;
@@ -135,7 +172,10 @@ const userError = (message) => Object.assign(new Error(message), { expose: true 
 // «12×2; Эфиопия×1» → [{product_id, qty}]
 async function parseBundleParts(partsText, lineNumber) {
   const bundleParts = [];
-  for (const rawPart of String(partsText || '').split(/[;\n]+/).map((part) => part.trim()).filter(Boolean)) {
+  for (const rawPart of String(partsText || '')
+    .split(/[;\n]+/)
+    .map((part) => part.trim())
+    .filter(Boolean)) {
     const partMatch = rawPart.match(/^(.+?)\s*[x×*хХ]\s*(\d+)$/i);
     const productKey = (partMatch ? partMatch[1] : rawPart).trim();
     const partQuantity = partMatch ? parseInt(partMatch[2], 10) : 1;
@@ -152,10 +192,19 @@ function findColumnIndexes(headerRow) {
   const headers = headerRow.map((header) => String(header).trim().toLowerCase());
   const indexOf = (...possibleNames) => headers.findIndex((header) => possibleNames.includes(header));
   return {
-    id: indexOf('id'), name: indexOf('название', 'name'), option: indexOf('вариант', 'option'), option2: indexOf('вариант2', 'option2'),
-    category: indexOf('категория', 'category'), price: indexOf('цена_руб', 'цена', 'price', 'price_rub'), stock: indexOf('остаток', 'stock'),
-    description: indexOf('описание', 'description'), type: indexOf('тип', 'type'), addonFor: indexOf('для_товаров', 'addon_for'),
-    bundleParts: indexOf('состав', 'bundle'), step: indexOf('шаг_г', 'шаг', 'step'), minimum: indexOf('мин_г', 'мин', 'min'),
+    id: indexOf('id'),
+    name: indexOf('название', 'name'),
+    option: indexOf('вариант', 'option'),
+    option2: indexOf('вариант2', 'option2'),
+    category: indexOf('категория', 'category'),
+    price: indexOf('цена_руб', 'цена', 'price', 'price_rub'),
+    stock: indexOf('остаток', 'stock'),
+    description: indexOf('описание', 'description'),
+    type: indexOf('тип', 'type'),
+    addonFor: indexOf('для_товаров', 'addon_for'),
+    bundleParts: indexOf('состав', 'bundle'),
+    step: indexOf('шаг_г', 'шаг', 'step'),
+    minimum: indexOf('мин_г', 'мин', 'min'),
   };
 }
 
@@ -165,10 +214,12 @@ async function updateProductFromRow(existingProduct, rowData, columns, pendingBu
   const isSoldByWeight = Boolean(existingProduct.unit);
   let newPrice = existingProduct.price;
   if (priceRubles !== null) {
-    if (isSoldByWeight && !Number.isInteger(priceRubles)) throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
+    if (isSoldByWeight && !Number.isInteger(priceRubles))
+      throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
     newPrice = isSoldByWeight ? priceRubles : Math.round(priceRubles * 100);
   }
-  const isBundleRow = (await inventory.isBundle(existingProduct.id)) || (columns.bundleParts >= 0 && readCell(columns.bundleParts));
+  const isBundleRow =
+    (await inventory.isBundle(existingProduct.id)) || (columns.bundleParts >= 0 && readCell(columns.bundleParts));
   let isChanged = false;
   if (newPrice !== existingProduct.price) {
     await database.product.update({ where: { id: existingProduct.id }, data: { price: newPrice } });
@@ -178,11 +229,21 @@ async function updateProductFromRow(existingProduct, rowData, columns, pendingBu
     await inventory.setStock(existingProduct.id, stock, 'загрузка файла');
     isChanged = true;
   }
-  if (columns.addonFor >= 0 && existingProduct.is_addon && readCell(columns.addonFor) !== (existingProduct.addon_for || '')) {
-    await database.product.update({ where: { id: existingProduct.id }, data: { addon_for: readCell(columns.addonFor) || null } });
+  if (
+    columns.addonFor >= 0 &&
+    existingProduct.is_addon &&
+    readCell(columns.addonFor) !== (existingProduct.addon_for || '')
+  ) {
+    await database.product.update({
+      where: { id: existingProduct.id },
+      data: { addon_for: readCell(columns.addonFor) || null },
+    });
     isChanged = true;
   }
-  if (columns.bundleParts >= 0 && readCell(columns.bundleParts) !== formatBundleParts(await inventory.getBundleParts(existingProduct.id))) {
+  if (
+    columns.bundleParts >= 0 &&
+    readCell(columns.bundleParts) !== formatBundleParts(await inventory.getBundleParts(existingProduct.id))
+  ) {
     pendingBundles.push({ bundleId: existingProduct.id, partsText: readCell(columns.bundleParts), lineNumber });
     isChanged = true;
   }
@@ -195,11 +256,13 @@ async function createProductFromRow(rowData, columns, pendingBundles) {
   const baseName = readCell(columns.name);
   const optionLabel = readCell(columns.option);
   const option2Label = readCell(columns.option2);
-  if (!baseName || priceRubles === null) throw userError(`строка ${lineNumber}: для нового товара нужны название и цена`);
+  if (!baseName || priceRubles === null)
+    throw userError(`строка ${lineNumber}: для нового товара нужны название и цена`);
   const compactType = productTypeName.replace(/\s/g, '');
   const unit = compactType === 'навес' ? 'g' : compactType === 'наобъём' || compactType === 'наобъем' ? 'ml' : null;
   const isSoldByWeight = Boolean(unit);
-  if (isSoldByWeight && !Number.isInteger(priceRubles)) throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
+  if (isSoldByWeight && !Number.isInteger(priceRubles))
+    throw userError(`строка ${lineNumber}: цена за 100 г — целые рубли`);
   const isAddon = productTypeName === 'доп';
   const createdProduct = await database.product.create({
     data: {
@@ -215,17 +278,19 @@ async function createProductFromRow(rowData, columns, pendingBundles) {
       step: isSoldByWeight ? Math.max(1, parseInt(readCell(columns.step), 10) || DEFAULT_WEIGHT_STEP) : 1,
       min_qty: isSoldByWeight ? Math.max(1, parseInt(readCell(columns.minimum), 10) || DEFAULT_WEIGHT_MINIMUM) : 1,
       is_addon: isAddon ? 1 : 0,
-      addon_for: isAddon ? (readCell(columns.addonFor) || '*') : null,
+      addon_for: isAddon ? readCell(columns.addonFor) || '*' : null,
     },
   });
   await inventory.writeStockLog(createdProduct.id, stock ?? 0, stock ?? 0, 'добавлен загрузкой файла');
-  if (productTypeName === 'набор') pendingBundles.push({ bundleId: createdProduct.id, partsText: readCell(columns.bundleParts), lineNumber });
+  if (productTypeName === 'набор')
+    pendingBundles.push({ bundleId: createdProduct.id, partsText: readCell(columns.bundleParts), lineNumber });
 }
 
 async function importRows(rows) {
   if (rows.length < 2) throw new Error('В файле нет строк с товарами');
   const columns = findColumnIndexes(rows[0]);
-  if (columns.stock < 0 && columns.price < 0) throw new Error('Не нашла колонки «остаток» или «цена_руб» — берите файл из выгрузки');
+  if (columns.stock < 0 && columns.price < 0)
+    throw new Error('Не нашла колонки «остаток» или «цена_руб» — берите файл из выгрузки');
   const importResult = { updated: 0, created: 0, unchanged: 0, errors: [] };
   // составы наборов применяем после всех строк — в них могут быть только что созданные товары по названию
   const pendingBundles = [];
@@ -234,15 +299,30 @@ async function importRows(rows) {
     for (const [rowIndex, fileRow] of rows.slice(1).entries()) {
       const lineNumber = rowIndex + 2;
       // «'=…» из нашей же выгрузки — возвращаем как было
-      const readCell = (columnIndex) => (columnIndex >= 0 ? String(fileRow[columnIndex] ?? '').trim().replace(/^'(?=[=+\-@])/, '') : '');
+      const readCell = (columnIndex) =>
+        columnIndex >= 0
+          ? String(fileRow[columnIndex] ?? '')
+              .trim()
+              .replace(/^'(?=[=+\-@])/, '')
+          : '';
       try {
         const stock = readCell(columns.stock) === '' ? null : parseNumber(readCell(columns.stock));
-        if (stock !== null && (!Number.isInteger(stock) || stock < 0 || stock > MAX_STOCK)) throw userError(`строка ${lineNumber}: остаток «${readCell(columns.stock)}» не подходит`);
+        if (stock !== null && (!Number.isInteger(stock) || stock < 0 || stock > MAX_STOCK))
+          throw userError(`строка ${lineNumber}: остаток «${readCell(columns.stock)}» не подходит`);
         const priceRubles = readCell(columns.price) === '' ? null : parseNumber(readCell(columns.price));
-        if (priceRubles !== null && (!Number.isFinite(priceRubles) || priceRubles <= 0 || priceRubles > MAX_PRICE_RUBLES)) {
+        if (
+          priceRubles !== null &&
+          (!Number.isFinite(priceRubles) || priceRubles <= 0 || priceRubles > MAX_PRICE_RUBLES)
+        ) {
           throw userError(`строка ${lineNumber}: цена «${readCell(columns.price)}» не подходит`);
         }
-        const rowData = { lineNumber, priceRubles, stock, readCell, productTypeName: readCell(columns.type).toLowerCase() };
+        const rowData = {
+          lineNumber,
+          priceRubles,
+          stock,
+          readCell,
+          productTypeName: readCell(columns.type).toLowerCase(),
+        };
         const productId = readCell(columns.id);
         if (productId) {
           const existingProduct = await database.product.findUnique({ where: { id: parseInt(productId, 10) } });
@@ -274,9 +354,22 @@ async function importRows(rows) {
 const importCsv = (csvText) => importRows(parseCsv(csvText));
 const importXlsx = async (fileBuffer) => importRows(await parseXlsx(fileBuffer));
 
-const importReportText = (importResult) => `📥 Склад обновлён\nИзменено: ${importResult.updated} · Добавлено: ${importResult.created} · Без изменений: ${importResult.unchanged}` +
+const importReportText = (importResult) =>
+  `📥 Склад обновлён\nИзменено: ${importResult.updated} · Добавлено: ${importResult.created} · Без изменений: ${importResult.unchanged}` +
   (importResult.errors.length
-    ? `\n\n⚠️ Пропущено ${importResult.errors.length}:\n` + importResult.errors.slice(0, 10).join('\n') + (importResult.errors.length > 10 ? '\n…' : '')
+    ? `\n\n⚠️ Пропущено ${importResult.errors.length}:\n` +
+      importResult.errors.slice(0, 10).join('\n') +
+      (importResult.errors.length > 10 ? '\n…' : '')
     : '');
 
-module.exports = { exportCsv, exportXlsx, importCsv, importXlsx, importRows, parseCsv, parseXlsx, importReportText, COLUMNS };
+module.exports = {
+  exportCsv,
+  exportXlsx,
+  importCsv,
+  importXlsx,
+  importRows,
+  parseCsv,
+  parseXlsx,
+  importReportText,
+  COLUMNS,
+};

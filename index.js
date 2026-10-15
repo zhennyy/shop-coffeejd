@@ -10,7 +10,9 @@ const { startWebhookServer } = require('./src/server');
 const { startSchedulers } = require('./src/schedulers');
 const { startCrmSync } = require('./src/crm');
 
-process.on('unhandledRejection', (rejectionReason) => console.error('Необработанная ошибка:', rejectionReason?.message || rejectionReason));
+process.on('unhandledRejection', (rejectionReason) =>
+  console.error('Необработанная ошибка:', rejectionReason?.message || rejectionReason),
+);
 
 async function start() {
   await initializeDatabase();

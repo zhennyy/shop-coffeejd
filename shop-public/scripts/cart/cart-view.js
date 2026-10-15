@@ -14,9 +14,10 @@ import { cartTotals, cartLines, changeQuantity, setQuantity } from './cart-model
 function freeDeliveryProgressHtml(sum) {
   const freeFrom = state.shopInfo && state.shopInfo.freeFrom > 0 ? state.shopInfo.freeFrom : 0;
   if (!freeFrom) return '';
-  if (sum >= freeFrom) return `<div class="freebar ok"><b>${inLanguage('🎉', '')}</b> ${inLanguage('Доставка будет бесплатной', 'Delivery will be free')}</div>`;
+  if (sum >= freeFrom)
+    return `<div class="freebar ok"><b>${inLanguage('🎉', '')}</b> ${inLanguage('Доставка будет бесплатной', 'Delivery will be free')}</div>`;
   const missing = formatRubles(freeFrom - sum);
-  const percent = Math.min(100, Math.round(sum / freeFrom * 100));
+  const percent = Math.min(100, Math.round((sum / freeFrom) * 100));
   return `<div class="freebar"><div>${inLanguage(`Добавьте ещё на <b>${missing}</b> — и доставка бесплатно`, `Add <b>${missing}</b> more for free delivery`)}</div><div class="bar"><i style="width:${percent}%"></i></div></div>`;
 }
 
@@ -35,18 +36,23 @@ function cartLineHtml({ product, quantity }) {
       </div>`;
 }
 
-const emptyCartHtml = () => `<div class="empty"><b>🛒</b>${texts().cartEmpty}<br><span style="font-size:13px">${inLanguage('Загляните в каталог — мы подскажем, что выбрать', 'Browse the catalog to get started')}</span><br><br><button class="btn" data-action="switch-tab" data-tab="catalog">${texts().toCatalog}</button></div>`;
+const emptyCartHtml = () =>
+  `<div class="empty"><b>🛒</b>${texts().cartEmpty}<br><span style="font-size:13px">${inLanguage('Загляните в каталог — мы подскажем, что выбрать', 'Browse the catalog to get started')}</span><br><br><button class="btn" data-action="switch-tab" data-tab="catalog">${texts().toCatalog}</button></div>`;
 
 export function renderCart() {
   const { itemCount, sum } = cartTotals();
   getElement('cartCount').textContent = itemCount || '';
   const lines = cartLines();
   const header = `<div class="carthead"><h1>${texts().cartTitle}</h1>${lines.length ? `<button class="linkbtn" data-action="clear-cart">${inLanguage('Очистить', 'Clear')}</button>` : ''}</div>`;
-  const content = lines.length ? freeDeliveryProgressHtml(sum) + lines.map(cartLineHtml).join('') + `
+  const content = lines.length
+    ? freeDeliveryProgressHtml(sum) +
+      lines.map(cartLineHtml).join('') +
+      `
       <div class="total"><span>${texts().total}</span><b>${formatRubles(sum)}</b></div>
       <div class="note" style="text-align:left;margin:-6px 0 12px">${inLanguage('Способ получения и стоимость доставки выберете на следующем шаге.', 'You will choose delivery on the next step.')}</div>
       ${isInsideTelegram ? '' : `<button class="btn" data-action="open-checkout">${texts().checkout(formatRubles(sum))}</button>`}
-      <div class="note">${texts().checkoutNote}</div>` : emptyCartHtml();
+      <div class="note">${texts().checkoutNote}</div>`
+    : emptyCartHtml();
   getElement('v-cart').innerHTML = header + content;
   // в Telegram вместо плавающей кнопки — системная MainButton
   const showCartBar = !isInsideTelegram && itemCount > 0 && state.activeTab === 'catalog';
@@ -74,5 +80,8 @@ export const cartActions = {
   },
   'remove-from-cart': (element) => setQuantity(productIdOf(element), 0),
   'clear-cart': () => clearCart(),
-  'go-to-cart': () => { closeSheet(); switchTab('cart'); },
+  'go-to-cart': () => {
+    closeSheet();
+    switchTab('cart');
+  },
 };

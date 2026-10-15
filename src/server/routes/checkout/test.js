@@ -7,7 +7,11 @@ const BUYER_ID = 5001;
 let shop;
 let actions;
 
-const receiptSum = (fiscalReceipt) => fiscalReceipt.items.reduce((sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * position.quantity, 0);
+const receiptSum = (fiscalReceipt) =>
+  fiscalReceipt.items.reduce(
+    (sum, position) => sum + Math.round(parseFloat(position.amount.value) * 100) * position.quantity,
+    0,
+  );
 const countCartRows = (chatId) => shop.database.cartItem.count({ where: { chat_id: chatId } });
 const placeOrder = (orderForm) => shop.call(BUYER_ID, 'POST', '/shop-api/order', orderForm);
 
@@ -23,8 +27,21 @@ before(async () => {
     return null;
   });
   await delivery.saveDeliveryOptions({
-    post: { enabled: true, carriers: [{ id: 'cdek', name: 'СДЭК', price: 35000 }, { id: 'russianpost', name: 'Почта России', price: 30000 }] },
-    distance: { enabled: true, origin: { address: 'x', lat: 0, lon: 0 }, tiers: [{ km: 5, price: 20000 }, { km: 15, price: 35000 }] },
+    post: {
+      enabled: true,
+      carriers: [
+        { id: 'cdek', name: 'СДЭК', price: 35000 },
+        { id: 'russianpost', name: 'Почта России', price: 30000 },
+      ],
+    },
+    distance: {
+      enabled: true,
+      origin: { address: 'x', lat: 0, lon: 0 },
+      tiers: [
+        { km: 5, price: 20000 },
+        { km: 15, price: 35000 },
+      ],
+    },
   });
 });
 
@@ -43,8 +60,17 @@ test('самовывоз: заказ создан, доставка 0, корз�
 test('СДЭК: фиксированная цена перевозчика; неизвестный перевозчик отклоняется', async () => {
   const [product] = await actions.productsInStock();
   await actions.setCart(BUYER_ID, [[product.id, 1]]);
-  assert.equal((await placeOrder({ delivery: 'post', carrier: 'xx', city: 'Казань', address: 'ул. Баумана, 1' })).status, 400);
-  const response = await placeOrder({ delivery: 'post', carrier: 'cdek', city: 'Казань', address: 'ул. Баумана, 1', phone: '89001234567' });
+  assert.equal(
+    (await placeOrder({ delivery: 'post', carrier: 'xx', city: 'Казань', address: 'ул. Баумана, 1' })).status,
+    400,
+  );
+  const response = await placeOrder({
+    delivery: 'post',
+    carrier: 'cdek',
+    city: 'Казань',
+    address: 'ул. Баумана, 1',
+    phone: '89001234567',
+  });
   assert.equal(response.status, 200, JSON.stringify(response.body));
   const order = await actions.findOrder(response.body.id);
   assert.equal(order.carrier, 'cdek');
@@ -54,15 +80,33 @@ test('СДЭК: фиксированная цена перевозчика; не
 test('по расстоянию: ступени, слишком далеко, адрес не найден, котировка совпадает с заказом', async () => {
   const [product] = await actions.productsInStock();
   await actions.setCart(BUYER_ID, [[product.id, 1]]);
-  const quote = await shop.call(BUYER_ID, 'POST', '/shop-api/delivery-quote', { delivery: 'distance', city: 'Москва', address: 'Ближняя улица 5' });
+  const quote = await shop.call(BUYER_ID, 'POST', '/shop-api/delivery-quote', {
+    delivery: 'distance',
+    city: 'Москва',
+    address: 'Ближняя улица 5',
+  });
   assert.equal(quote.status, 200, JSON.stringify(quote.body));
   assert.equal(quote.body.delivery, 20000);
   await new Promise((resolve) => setTimeout(resolve, 1100));
-  const tooFar = await placeOrder({ delivery: 'distance', city: 'Москва', address: 'Дальняя улица 5', phone: '89001234567' });
+  const tooFar = await placeOrder({
+    delivery: 'distance',
+    city: 'Москва',
+    address: 'Дальняя улица 5',
+    phone: '89001234567',
+  });
   assert.equal(tooFar.status, 400);
   assert.match(tooFar.body.error, /Далеко/);
-  assert.equal((await placeOrder({ delivery: 'distance', city: 'Москва', address: 'Неизвестная улица 5', phone: '89001234567' })).status, 400);
-  const accepted = await placeOrder({ delivery: 'distance', city: 'Москва', address: 'Средняя улица 5', phone: '89001234567' });
+  assert.equal(
+    (await placeOrder({ delivery: 'distance', city: 'Москва', address: 'Неизвестная улица 5', phone: '89001234567' }))
+      .status,
+    400,
+  );
+  const accepted = await placeOrder({
+    delivery: 'distance',
+    city: 'Москва',
+    address: 'Средняя улица 5',
+    phone: '89001234567',
+  });
   assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
   assert.equal((await actions.findOrder(accepted.body.id)).total, product.price + 35000);
 });
@@ -70,7 +114,10 @@ test('по расстоянию: ступени, слишком далеко, а
 test('валидация контакта и чек 54-ФЗ: сумма позиций равна платежу', async () => {
   process.env.YOOKASSA_RECEIPTS = 'on';
   const [firstProduct, secondProduct] = await actions.productsInStock();
-  await actions.setCart(BUYER_ID, [[firstProduct.id, 3], [secondProduct.id, 2]]);
+  await actions.setCart(BUYER_ID, [
+    [firstProduct.id, 3],
+    [secondProduct.id, 2],
+  ]);
   assert.equal((await placeOrder({ delivery: 'pickup' })).status, 400);
   assert.equal((await placeOrder({ delivery: 'pickup', phone: '123' })).status, 400);
   assert.equal((await placeOrder({ delivery: 'pickup', email: 'abc' })).status, 400);
@@ -88,7 +135,9 @@ test('сбой создания оплаты: заказ отменён, кор�
   const originalPost = axios.post;
   const [product] = await actions.productsInStock();
   await actions.setCart(BUYER_ID, [[product.id, 1]]);
-  axios.post = async () => { throw new Error('boom'); };
+  axios.post = async () => {
+    throw new Error('boom');
+  };
   const response = await placeOrder({ delivery: 'pickup', phone: '89001234567' });
   axios.post = originalPost;
   assert.equal(response.status, 502);
@@ -109,7 +158,8 @@ test('нехватка товара при оформлении', async () => {
 
 test('промокоды нельзя подбирать: после 12 попыток — 429', async () => {
   let lastResponse;
-  for (let attempt = 0; attempt < 14; attempt++) lastResponse = await shop.call(8001, 'POST', '/shop-api/promo', { code: 'NOPE' + attempt });
+  for (let attempt = 0; attempt < 14; attempt++)
+    lastResponse = await shop.call(8001, 'POST', '/shop-api/promo', { code: 'NOPE' + attempt });
   assert.equal(lastResponse.status, 429);
 });
 

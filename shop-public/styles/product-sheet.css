@@ -1,25 +1,131 @@
 /* Шторка товара: варианты, выбор веса, состав набора, допы */
-.opts{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
-.sheet .stock{font-size:14px;font-weight:600;margin-bottom:16px}
-.sheet .act{display:flex;align-items:center;gap:12px;position:sticky;bottom:0;background:linear-gradient(to top,var(--card) 70%,transparent);padding:12px 0 4px;margin-top:6px}
-.sheet .act .price{font-size:24px;flex:1}
-.sheet .act .add{width:auto;padding:0 20px;height:48px;font-size:16px;font-weight:700;border-radius:14px}
-.sheet .act .step{height:48px;border-radius:14px}
-.sheet .act .step button{width:44px;height:48px;font-size:24px}
+.opts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 4px 0 10px;
+}
+.sheet .stock {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+.sheet .act {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--card) 70%, transparent);
+  padding: 12px 0 4px;
+  margin-top: 6px;
+}
+.sheet .act .price {
+  font-size: 24px;
+  flex: 1;
+}
+.sheet .act .add {
+  width: auto;
+  padding: 0 20px;
+  height: 48px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 14px;
+}
+.sheet .act .step {
+  height: 48px;
+  border-radius: 14px;
+}
+.sheet .act .step button {
+  width: 44px;
+  height: 48px;
+  font-size: 24px;
+}
 
-.wbox{background:var(--accent-soft);border-radius:16px;padding:12px;margin:6px 0 10px}
-.wbox .wlbl{font-weight:700;margin-bottom:8px}
-.wbox .opts{margin:0 0 8px}
-.wbox .chip{background:var(--card)} .wbox .chip.on{background:var(--accent)}
+.wbox {
+  background: var(--accent-soft);
+  border-radius: 16px;
+  padding: 12px;
+  margin: 6px 0 10px;
+}
+.wbox .wlbl {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.wbox .opts {
+  margin: 0 0 8px;
+}
+.wbox .chip {
+  background: var(--card);
+}
+.wbox .chip.on {
+  background: var(--accent);
+}
 
-.bset{background:var(--accent-soft);border-radius:16px;padding:12px 14px;margin:8px 0 12px}
-.btitle{font-weight:700;margin-bottom:6px}
-.bline{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-top:1px solid color-mix(in srgb,var(--accent) 14%,transparent);font-size:14px}
-.bline .bn{flex:1;min-width:0}.bline .bq{color:var(--muted);white-space:nowrap}.bline .bp{font-weight:600;white-space:nowrap}
-.bsave{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px dashed var(--accent);font-size:14px}
-.bsave b{color:var(--ok)}
+.bset {
+  background: var(--accent-soft);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin: 8px 0 12px;
+}
+.btitle {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.bline {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+  font-size: 14px;
+}
+.bline .bn {
+  flex: 1;
+  min-width: 0;
+}
+.bline .bq {
+  color: var(--muted);
+  white-space: nowrap;
+}
+.bline .bp {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bsave {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--accent);
+  font-size: 14px;
+}
+.bsave b {
+  color: var(--ok);
+}
 
-.addons{margin-top:14px;border-top:1px solid var(--line);padding-top:10px}
-.addons h3{margin:0 0 6px;font-size:15px}
-.arow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0}
-.arow .an{font-weight:600;font-size:14px}.arow .ap{color:var(--muted);font-size:13px}
+.addons {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+.addons h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+}
+.arow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.arow .an {
+  font-weight: 600;
+  font-size: 14px;
+}
+.arow .ap {
+  color: var(--muted);
+  font-size: 13px;
+}

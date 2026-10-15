@@ -9,20 +9,31 @@ async function runExtraChecks(runner, shop) {
   await tabButton(buyer, 'Корзина').click();
   await settle(buyer);
   await buyer.locator('#v-cart .freebar .bar').click();
-  check('клик по полосе «до бесплатной доставки» не показывает пустой тост', !(await buyer.evaluate(() => document.getElementById('toast').classList.contains('on'))));
+  check(
+    'клик по полосе «до бесплатной доставки» не показывает пустой тост',
+    !(await buyer.evaluate(() => document.getElementById('toast').classList.contains('on'))),
+  );
   await tabButton(buyer, 'Заказы').click();
   await buyer.waitForSelector('#v-orders .order');
   await buyer.locator('#v-orders .seg button', { hasText: 'Пауза' }).click();
   await buyer.waitForSelector('#v-orders .sub >> text=на паузе');
   const subscription = await shop.database.subscription.findFirst({ where: { chat_id: BUYER_ID } });
-  check('регулярный заказ поставлен на паузу', subscription && !subscription.active, JSON.stringify(subscription && subscription.active));
+  check(
+    'регулярный заказ поставлен на паузу',
+    subscription && !subscription.active,
+    JSON.stringify(subscription && subscription.active),
+  );
   const linksBefore = (await buyer.evaluate(() => window.__telegramLog.links)).length;
   await buyer.locator('#v-orders .btn.pay').first().click();
   await settle(buyer, { keepToast: true });
   // подставная ЮKassa не отдаёт ссылку повторно — сервер честно отвечает 410 «ссылка устарела»; главное, что ответ дошёл до покупателя
   const linkOpened = (await buyer.evaluate(() => window.__telegramLog.links)).length === linksBefore + 1;
   const toastText = await buyer.locator('#toast').innerText();
-  check('«Оплатить» у неоплаченного заказа: ссылка или понятная ошибка', linkOpened || /устарела/.test(toastText), toastText);
+  check(
+    '«Оплатить» у неоплаченного заказа: ссылка или понятная ошибка',
+    linkOpened || /устарела/.test(toastText),
+    toastText,
+  );
   await tabButton(buyer, 'AI-подбор').click();
   await buyer.fill('#aiQ', 'что-нибудь к десерту');
   await buyer.click('#aiGo');
@@ -51,12 +62,20 @@ async function runExtraChecks(runner, shop) {
   check('в набор добавляется строка', (await bundleRows()) === rowsAtStart + 1);
   await owner.locator('#bundleBox .crow').last().locator('.mini').click();
   check('строка набора удаляется', (await bundleRows()) === rowsAtStart);
-  await owner.locator('#sheet .x').click({ timeout: 3000 }).catch(() => {});
-  check('крестик в редакторе товара с фото закрывает шторку', !(await owner.evaluate(() => document.body.classList.contains('open'))));
+  await owner
+    .locator('#sheet .x')
+    .click({ timeout: 3000 })
+    .catch(() => {});
+  check(
+    'крестик в редакторе товара с фото закрывает шторку',
+    !(await owner.evaluate(() => document.body.classList.contains('open'))),
+  );
   await closeSheetByVeil(owner).catch(() => {});
   // Enter в поле названия не должен отправлять «фото по ссылке» (первая кнопка формы)
   const photoUrlRequests = [];
-  owner.on('request', (request) => { if (request.url().includes('/photo-url')) photoUrlRequests.push(request.url()); });
+  owner.on('request', (request) => {
+    if (request.url().includes('/photo-url')) photoUrlRequests.push(request.url());
+  });
   await owner.locator('#admBody .aline', { hasText: 'Колумбия' }).first().click();
   await owner.locator('#pform input[name="name"]').press('Enter');
   await settle(owner, { keepToast: true });
@@ -64,8 +83,11 @@ async function runExtraChecks(runner, shop) {
   if (await owner.evaluate(() => document.body.classList.contains('open'))) await closeSheetByVeil(owner);
   await owner.locator('.chips.adm .chip', { hasText: 'Настройки' }).click();
   await owner.waitForSelector('#admBody .prow');
-  check('настройки не шире экрана телефона', (await owner.evaluate(() => document.documentElement.scrollWidth)) <= VIEWPORT.width,
-    String(await owner.evaluate(() => document.documentElement.scrollWidth)));
+  check(
+    'настройки не шире экрана телефона',
+    (await owner.evaluate(() => document.documentElement.scrollWidth)) <= VIEWPORT.width,
+    String(await owner.evaluate(() => document.documentElement.scrollWidth)),
+  );
   await owner.locator('#admBody .prow', { hasText: 'COFFEE10' }).locator('.sw i').click();
   await settle(owner, { keepToast: true });
   const promo = await shop.database.promoCode.findFirst({ where: { code: 'COFFEE10' } });

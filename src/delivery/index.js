@@ -8,8 +8,22 @@ const { getSetting, setSetting } = require('../settings');
 
 const SETTINGS_KEY = 'delivery2';
 const DEFAULT_OPTIONS = {
-  post: { enabled: false, carriers: [{ id: 'cdek', name: 'СДЭК', price: 35000 }, { id: 'russianpost', name: 'Почта России', price: 30000 }] },
-  distance: { enabled: false, origin: { address: '', lat: null, lon: null }, tiers: [{ km: 5, price: 20000 }, { km: 15, price: 35000 }, { km: 30, price: 60000 }] },
+  post: {
+    enabled: false,
+    carriers: [
+      { id: 'cdek', name: 'СДЭК', price: 35000 },
+      { id: 'russianpost', name: 'Почта России', price: 30000 },
+    ],
+  },
+  distance: {
+    enabled: false,
+    origin: { address: '', lat: null, lon: null },
+    tiers: [
+      { km: 5, price: 20000 },
+      { km: 15, price: 35000 },
+      { km: 30, price: 60000 },
+    ],
+  },
 };
 const MAX_GEOCODE_QUEUE = 15;
 const MAX_GEOCODE_CACHE = 500;
@@ -24,7 +38,11 @@ async function getDeliveryOptions() {
   const savedDistance = savedOptions.distance || {};
   return {
     post: { ...DEFAULT_OPTIONS.post, ...(savedOptions.post || {}) },
-    distance: { ...DEFAULT_OPTIONS.distance, ...savedDistance, origin: { ...DEFAULT_OPTIONS.distance.origin, ...(savedDistance.origin || {}) } },
+    distance: {
+      ...DEFAULT_OPTIONS.distance,
+      ...savedDistance,
+      origin: { ...DEFAULT_OPTIONS.distance.origin, ...(savedDistance.origin || {}) },
+    },
   };
 }
 const saveDeliveryOptions = (options) => setSetting(SETTINGS_KEY, options);
@@ -48,7 +66,8 @@ async function geocodeWithNominatim(address) {
 function geocode(address) {
   const cacheKey = String(address).trim().toLowerCase();
   if (geocodeCache.has(cacheKey)) return Promise.resolve(geocodeCache.get(cacheKey));
-  if (pendingGeocodeCount >= MAX_GEOCODE_QUEUE) return Promise.reject(new Error('Сервис адресов перегружен — попробуйте через минуту'));
+  if (pendingGeocodeCount >= MAX_GEOCODE_QUEUE)
+    return Promise.reject(new Error('Сервис адресов перегружен — попробуйте через минуту'));
   pendingGeocodeCount++;
   const geocodeRequest = geocodeQueue.then(async () => {
     const point = await (customGeocoder || geocodeWithNominatim)(address);
@@ -59,20 +78,30 @@ function geocode(address) {
     }
     return null;
   });
-  geocodeRequest.finally(() => { pendingGeocodeCount--; }).catch(() => {});
+  geocodeRequest
+    .finally(() => {
+      pendingGeocodeCount--;
+    })
+    .catch(() => {});
   // запросы идут по одному с паузой; ошибка одного не ломает очередь
-  geocodeQueue = geocodeRequest.catch(() => {}).then(() => new Promise((resolve) => setTimeout(resolve, customGeocoder ? 0 : NOMINATIM_PAUSE_MS)));
+  geocodeQueue = geocodeRequest
+    .catch(() => {})
+    .then(() => new Promise((resolve) => setTimeout(resolve, customGeocoder ? 0 : NOMINATIM_PAUSE_MS)));
   return geocodeRequest;
 }
-const setGeocoder = (geocoderFunction) => { customGeocoder = geocoderFunction; geocodeCache.clear(); };
+const setGeocoder = (geocoderFunction) => {
+  customGeocoder = geocoderFunction;
+  geocodeCache.clear();
+};
 
 const toRadians = (degrees) => (degrees * Math.PI) / 180;
 // Расстояние по прямой между двумя точками, км (формула гаверсинусов)
 function distanceBetween(fromPoint, toPoint) {
   const latitudeDelta = toRadians(toPoint.lat - fromPoint.lat);
   const longitudeDelta = toRadians(toPoint.lon - fromPoint.lon);
-  const haversine = Math.sin(latitudeDelta / 2) ** 2
-    + Math.cos(toRadians(fromPoint.lat)) * Math.cos(toRadians(toPoint.lat)) * Math.sin(longitudeDelta / 2) ** 2;
+  const haversine =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(fromPoint.lat)) * Math.cos(toRadians(toPoint.lat)) * Math.sin(longitudeDelta / 2) ** 2;
   return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(haversine));
 }
 
@@ -98,7 +127,9 @@ async function quoteByDistance(address) {
   const distanceKm = distanceBetween(distanceOptions.origin, customerPoint);
   const price = priceForDistance(distanceOptions.tiers, distanceKm);
   if (price == null) {
-    throw userError(`Далеко: по расстоянию возим до ${Math.max(...distanceOptions.tiers.map((tier) => tier.km))} км. Выберите СДЭК или Почту`);
+    throw userError(
+      `Далеко: по расстоянию возим до ${Math.max(...distanceOptions.tiers.map((tier) => tier.km))} км. Выберите СДЭК или Почту`,
+    );
   }
   return { price, km: Math.round(distanceKm * 10) / 10 };
 }
@@ -113,17 +144,33 @@ async function getCarrier(carrierId) {
 
 // Разбор ступеней из админки: строки «до км : цена ₽»
 function parseDistanceTiers(text) {
-  const tiers = String(text || '').split(/[\n;,]+/).map((line) => line.trim()).filter(Boolean).map((line) => {
-    const tierMatch = line.match(/^(\d+(?:[.,]\d+)?)\s*(?:км)?\s*[:=\-–]\s*(\d+(?:[.,]\d+)?)/i);
-    if (!tierMatch) throw userError(`Не понимаю строку «${line}». Пишите так: 5 : 200 (до 5 км — 200 ₽)`);
-    return { km: parseFloat(tierMatch[1].replace(',', '.')), price: Math.round(parseFloat(tierMatch[2].replace(',', '.')) * 100) };
-  });
+  const tiers = String(text || '')
+    .split(/[\n;,]+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const tierMatch = line.match(/^(\d+(?:[.,]\d+)?)\s*(?:км)?\s*[:=\-–]\s*(\d+(?:[.,]\d+)?)/i);
+      if (!tierMatch) throw userError(`Не понимаю строку «${line}». Пишите так: 5 : 200 (до 5 км — 200 ₽)`);
+      return {
+        km: parseFloat(tierMatch[1].replace(',', '.')),
+        price: Math.round(parseFloat(tierMatch[2].replace(',', '.')) * 100),
+      };
+    });
   if (tiers.length > MAX_DISTANCE_TIERS) throw userError(`Не больше ${MAX_DISTANCE_TIERS} ступеней`);
-  if (new Set(tiers.map((tier) => tier.km)).size !== tiers.length) throw userError('Расстояния в ступенях не должны повторяться');
+  if (new Set(tiers.map((tier) => tier.km)).size !== tiers.length)
+    throw userError('Расстояния в ступенях не должны повторяться');
   return tiers.sort((first, second) => first.km - second.km);
 }
 
 module.exports = {
-  getDeliveryOptions, saveDeliveryOptions, geocode, setGeocoder, distanceBetween, priceForDistance,
-  quoteByDistance, getCarrier, parseDistanceTiers, DEFAULT_OPTIONS,
+  getDeliveryOptions,
+  saveDeliveryOptions,
+  geocode,
+  setGeocoder,
+  distanceBetween,
+  priceForDistance,
+  quoteByDistance,
+  getCarrier,
+  parseDistanceTiers,
+  DEFAULT_OPTIONS,
 };

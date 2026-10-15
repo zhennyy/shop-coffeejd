@@ -29,4 +29,10 @@ const subscriptionUpdateValidator = createValidator((request) => {
   return { subscriptionId: parsePositiveId(request.params.id), action, days: parseInt(request.body.days, 10) };
 });
 
-module.exports = { cartPostValidator, languagePostValidator, aiPostValidator, subscriptionPostValidator, subscriptionUpdateValidator };
+module.exports = {
+  cartPostValidator,
+  languagePostValidator,
+  aiPostValidator,
+  subscriptionPostValidator,
+  subscriptionUpdateValidator,
+};

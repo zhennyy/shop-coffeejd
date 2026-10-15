@@ -24,26 +24,31 @@ export function cartTotals() {
 }
 
 /** Строки корзины: [{ product, quantity }] — только товары, которые есть в каталоге */
-export const cartLines = () => Object.entries(state.cart)
-  .map(([productId, quantity]) => ({ product: findProduct(productId), quantity }))
-  .filter((line) => line.product);
+export const cartLines = () =>
+  Object.entries(state.cart)
+    .map(([productId, quantity]) => ({ product: findProduct(productId), quantity }))
+    .filter((line) => line.product);
 
 /** Перерисовать всё, что показывает количество этого товара */
 function refreshProductEverywhere(productId) {
-  document.querySelectorAll(`[data-quantity-control-for="${productId}"]`).forEach((container) => { container.innerHTML = quantityControlHtml(findProduct(productId)); });
-  if (state.openProductId == productId) renderProductSheet();
+  document.querySelectorAll(`[data-quantity-control-for="${productId}"]`).forEach((container) => {
+    container.innerHTML = quantityControlHtml(findProduct(productId));
+  });
+  if (Number(state.openProductId) === Number(productId)) renderProductSheet();
   renderCart();
 }
 
 async function saveQuantity(productId, quantity, strength) {
   const previous = state.cart[productId] || 0;
-  if (quantity) state.cart[productId] = quantity; else delete state.cart[productId];
+  if (quantity) state.cart[productId] = quantity;
+  else delete state.cart[productId];
   vibrate(strength);
   refreshProductEverywhere(productId);
   try {
     await callApi('/cart', { product_id: productId, qty: quantity });
   } catch (error) {
-    if (previous) state.cart[productId] = previous; else delete state.cart[productId];
+    if (previous) state.cart[productId] = previous;
+    else delete state.cart[productId];
     refreshProductEverywhere(productId);
     showToast(error.message);
   }
@@ -62,7 +67,10 @@ export async function changeQuantity(productId, direction) {
   } else {
     next = Math.max(0, current + direction);
   }
-  if (next > product.stock) { showToast(texts().noMoreInStock); return; }
+  if (next > product.stock) {
+    showToast(texts().noMoreInStock);
+    return;
+  }
   await saveQuantity(productId, next, direction > 0 ? 'medium' : 'light');
 }
 
@@ -70,6 +78,9 @@ export async function changeQuantity(productId, direction) {
 export async function setQuantity(productId, quantity) {
   const product = findProduct(productId);
   if (!product) return;
-  if (quantity > product.stock) { showToast(texts().noMoreInStock); return; }
+  if (quantity > product.stock) {
+    showToast(texts().noMoreInStock);
+    return;
+  }
   await saveQuantity(productId, quantity, 'medium');
 }

@@ -7,13 +7,23 @@ import { getElement, escapeHtml } from '../utils/dom.js';
 import { formatAmount, formatRubles } from '../utils/format.js';
 import { productPhotoHtml } from './product-photo.js';
 import { quantityStepperHtml } from './product-card.js';
-import { findProduct, isSoldByAmount, minimumQuantity, productCategory, productBaseName, productDescription, priceText } from './product-helpers.js';
+import {
+  findProduct,
+  isSoldByAmount,
+  minimumQuantity,
+  productCategory,
+  productBaseName,
+  productDescription,
+  priceText,
+} from './product-helpers.js';
 import { variantOptionsHtml, addonsHtml, bundleContentsHtml, weightPickerHtml } from './product-sheet-sections.js';
 import { cartTotals } from '../cart/cart-model.js';
 
 function stockLineHtml(product) {
   if (product.stock <= 0) return `<div class="stock" style="color:var(--bad)">${texts().outOfStock}</div>`;
-  const inStock = isSoldByAmount(product) ? inLanguage('В наличии: ', 'In stock: ') + formatAmount(product.stock, product.unit) : texts().inStock(product.stock);
+  const inStock = isSoldByAmount(product)
+    ? inLanguage('В наличии: ', 'In stock: ') + formatAmount(product.stock, product.unit)
+    : texts().inStock(product.stock);
   return `<div class="stock" style="color:var(--ok)">✓ ${inStock}</div>`;
 }
 
@@ -68,6 +78,9 @@ export const isSheetOpen = () => document.body.classList.contains('open');
 
 export const productSheetActions = {
   'open-product': (element) => openProductSheet(Number(element.dataset.productId)),
-  'select-variant': (element) => { state.openProductId = Number(element.dataset.productId); renderProductSheet(); },
+  'select-variant': (element) => {
+    state.openProductId = Number(element.dataset.productId);
+    renderProductSheet();
+  },
   'close-sheet': () => closeSheet(),
 };

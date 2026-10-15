@@ -19,10 +19,19 @@ async function sendOrderToCrm(orderId) {
       source: process.env.CRM_SOURCE || 'coffeejd',
       customer: { external_id: String(order.chat_id), name: (await customers.getName(order.chat_id)) || '' },
       order: {
-        id: String(order.id), code: order.code, status: order.base, total: order.total, delivery_cost: order.delivery_cost || 0,
-        address: order.address || '', track: order.track || '',
+        id: String(order.id),
+        code: order.code,
+        status: order.base,
+        total: order.total,
+        delivery_cost: order.delivery_cost || 0,
+        address: order.address || '',
+        track: order.track || '',
         items: order.items.map((orderItem) => {
-          const receiptLine = asReceiptLine({ name: orderItem.name, unit: orderItem.unit }, orderItem.quantity, orderItem.price);
+          const receiptLine = asReceiptLine(
+            { name: orderItem.name, unit: orderItem.unit },
+            orderItem.quantity,
+            orderItem.price,
+          );
           return { name: receiptLine.name, qty: receiptLine.quantity, price: receiptLine.price };
         }),
       },
@@ -33,10 +42,16 @@ async function sendOrderToCrm(orderId) {
         return;
       } catch (requestError) {
         if (requestError.response && requestError.response.status < 500) {
-          console.warn('CRM отклонила заказ', order.code, requestError.response.status, requestError.response.data?.error || '');
+          console.warn(
+            'CRM отклонила заказ',
+            order.code,
+            requestError.response.status,
+            requestError.response.data?.error || '',
+          );
           return;
         }
-        if (attempt === MAX_ATTEMPTS) console.warn('CRM недоступна, заказ', order.code, 'не отправлен:', requestError.message);
+        if (attempt === MAX_ATTEMPTS)
+          console.warn('CRM недоступна, заказ', order.code, 'не отправлен:', requestError.message);
         else await new Promise((resolve) => setTimeout(resolve, RETRY_PAUSE_MS * attempt));
       }
     }
@@ -46,7 +61,9 @@ async function sendOrderToCrm(orderId) {
 }
 
 // Не ждём ответа CRM: заказ оформляется дальше, отправка идёт в фоне
-const pushOrder = (orderId) => { sendOrderToCrm(orderId); };
+const pushOrder = (orderId) => {
+  sendOrderToCrm(orderId);
+};
 
 // Подписка на заказы: каждый новый заказ и каждая смена статуса уходят в CRM. Вызывается один раз при запуске.
 function startCrmSync() {

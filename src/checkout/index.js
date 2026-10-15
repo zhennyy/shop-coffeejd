@@ -12,8 +12,12 @@ const DELIVERY_METHODS = ['pickup', 'city', 'post', 'distance'];
 async function resolveDelivery({ method, city, carrier, addr }, goodsTotal, discountPercent, language = 'ru') {
   const deliveryMethod = DELIVERY_METHODS.includes(method) ? method : 'city';
   const deliverySettings = await getDeliverySettings();
-  const streetAddress = String(addr || '').trim().slice(0, 300);
-  const cityName = String(city || '').trim().slice(0, 80);
+  const streetAddress = String(addr || '')
+    .trim()
+    .slice(0, 300);
+  const cityName = String(city || '')
+    .trim()
+    .slice(0, 80);
   let deliveryCity = null;
   let fullAddress;
   let fixedDeliveryPrice;
@@ -47,8 +51,15 @@ async function resolveDelivery({ method, city, carrier, addr }, goodsTotal, disc
 
   const priceQuote = await pricing.quote(goodsTotal, discountPercent, deliveryCity, fixedDeliveryPrice);
   return {
-    method: deliveryMethod, deliveryCity, address: fullAddress, addrRaw: streetAddress, carrier: carrierId,
-    delivery: priceQuote.delivery, goods: priceQuote.goods, total: priceQuote.total, km: distanceKm,
+    method: deliveryMethod,
+    deliveryCity,
+    address: fullAddress,
+    addrRaw: streetAddress,
+    carrier: carrierId,
+    delivery: priceQuote.delivery,
+    goods: priceQuote.goods,
+    total: priceQuote.total,
+    km: distanceKm,
   };
 }
 

@@ -20,17 +20,25 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** Значения по умолчанию: Петербург (или первый город), первый перевозчик, контакты из прошлого заказа */
 function prefillForm(info) {
-  if (!checkoutForm.city && info.cities.length) checkoutForm.city = (info.cities.find((city) => /петербург/i.test(city.city)) || info.cities[0]).city;
+  if (!checkoutForm.city && info.cities.length)
+    checkoutForm.city = (info.cities.find((city) => /петербург/i.test(city.city)) || info.cities[0]).city;
   if (!checkoutForm.city) checkoutForm.city = OTHER_CITY;
   if (!info.pickup && checkoutForm.delivery === 'pickup') checkoutForm.delivery = 'city';
   if (info.post && !checkoutForm.carrier) checkoutForm.carrier = info.post.carriers[0]?.id || '';
   const savedContacts = String(info.contact || '').split(/\s+/);
-  if (!checkoutForm.phone) checkoutForm.phone = savedContacts.find((contact) => !contact.includes('@') && contact.replace(/\D/g, '').length >= MIN_PHONE_DIGITS) || '';
+  if (!checkoutForm.phone)
+    checkoutForm.phone =
+      savedContacts.find(
+        (contact) => !contact.includes('@') && contact.replace(/\D/g, '').length >= MIN_PHONE_DIGITS,
+      ) || '';
   if (!checkoutForm.email) checkoutForm.email = savedContacts.find((contact) => contact.includes('@')) || '';
 }
 
 export async function openCheckout() {
-  if (!cartTotals().itemCount) { showToast(texts().cartEmpty); return; }
+  if (!cartTotals().itemCount) {
+    showToast(texts().cartEmpty);
+    return;
+  }
   switchTab('checkout');
   if (!checkout.isPrepared) {
     if (!state.shopInfo) {
@@ -65,9 +73,21 @@ function showFieldError(fieldId, message) {
 }
 
 async function quoteDistanceDelivery() {
-  if (checkoutForm.other.trim().length < MIN_CITY_LENGTH || checkoutForm.address.trim().length < MIN_ADDRESS_LENGTH) { showToast('Укажите город и адрес'); return false; }
+  if (checkoutForm.other.trim().length < MIN_CITY_LENGTH || checkoutForm.address.trim().length < MIN_ADDRESS_LENGTH) {
+    showToast('Укажите город и адрес');
+    return false;
+  }
   try {
-    const quote = await callApi('/delivery-quote', { delivery: 'distance', city: checkoutForm.other.trim(), address: checkoutForm.address, promo: checkoutForm.promoPercent ? checkoutForm.promo : '' }, 1);
+    const quote = await callApi(
+      '/delivery-quote',
+      {
+        delivery: 'distance',
+        city: checkoutForm.other.trim(),
+        address: checkoutForm.address,
+        promo: checkoutForm.promoPercent ? checkoutForm.promo : '',
+      },
+      1,
+    );
     checkoutForm.quote = { key: addressKey(), delivery: quote.delivery, km: quote.km };
     renderCheckout();
     return true;
@@ -104,10 +124,16 @@ function findFormError() {
   const hasCity = checkoutForm.other.trim().length >= MIN_CITY_LENGTH;
   if (method === 'city' && checkoutForm.city === OTHER_CITY && !hasCity) return ['coOther', 'Укажите город'];
   if ((method === 'post' || method === 'distance') && !hasCity) return ['coOther', 'Укажите город'];
-  if (method !== 'pickup' && checkoutForm.address.trim().length < MIN_ADDRESS_LENGTH) return ['coAddr', 'Укажите адрес: улица, дом, квартира'];
+  if (method !== 'pickup' && checkoutForm.address.trim().length < MIN_ADDRESS_LENGTH)
+    return ['coAddr', 'Укажите адрес: улица, дом, квартира'];
   // без телефона можно, если включены чеки и указан e-mail
-  if (checkoutForm.phone.replace(/\D/g, '').length < MIN_PHONE_DIGITS && !(checkoutForm.email && checkout.info.receipts)) return ['coPhone', 'Введите телефон полностью, например +7 900 123-45-67'];
-  if (checkoutForm.email && !EMAIL_PATTERN.test(checkoutForm.email.trim())) return ['coEmail', 'Проверьте e-mail — например, name@mail.ru'];
+  if (
+    checkoutForm.phone.replace(/\D/g, '').length < MIN_PHONE_DIGITS &&
+    !(checkoutForm.email && checkout.info.receipts)
+  )
+    return ['coPhone', 'Введите телефон полностью, например +7 900 123-45-67'];
+  if (checkoutForm.email && !EMAIL_PATTERN.test(checkoutForm.email.trim()))
+    return ['coEmail', 'Проверьте e-mail — например, name@mail.ru'];
   return null;
 }
 
@@ -121,8 +147,14 @@ function deliveryCityForOrder() {
 export async function payForOrder() {
   if (checkout.isPaying) return;
   const formError = findFormError();
-  if (formError) { showFieldError(...formError); return; }
-  if (checkoutForm.delivery === 'distance' && deliveryCost() == null) { await quoteDistanceDelivery(); return; } // сначала покажем цену, потом оплата
+  if (formError) {
+    showFieldError(...formError);
+    return;
+  }
+  if (checkoutForm.delivery === 'distance' && deliveryCost() == null) {
+    await quoteDistanceDelivery();
+    return;
+  } // сначала покажем цену, потом оплата
   if (checkoutForm.promo && !checkoutForm.promoPercent) {
     await applyPromo();
     if (!checkoutForm.promoPercent) return;
@@ -131,10 +163,19 @@ export async function payForOrder() {
   telegram?.MainButton?.showProgress?.();
   try {
     const method = checkoutForm.delivery;
-    const order = await callApi('/order', {
-      delivery: method, city: deliveryCityForOrder(), carrier: method === 'post' ? checkoutForm.carrier : '', address: checkoutForm.address,
-      phone: checkoutForm.phone, email: checkoutForm.email.trim(), promo: checkoutForm.promoPercent ? checkoutForm.promo : '',
-    }, 1);
+    const order = await callApi(
+      '/order',
+      {
+        delivery: method,
+        city: deliveryCityForOrder(),
+        carrier: method === 'post' ? checkoutForm.carrier : '',
+        address: checkoutForm.address,
+        phone: checkoutForm.phone,
+        email: checkoutForm.email.trim(),
+        promo: checkoutForm.promoPercent ? checkoutForm.promo : '',
+      },
+      1,
+    );
     vibrate('heavy');
     state.cart = {};
     renderCart();
@@ -153,7 +194,10 @@ export async function payForOrder() {
 
 export const checkoutActions = {
   'open-checkout': () => openCheckout(),
-  'choose-delivery': (element) => { checkoutForm.delivery = element.dataset.delivery; renderCheckout(); },
+  'choose-delivery': (element) => {
+    checkoutForm.delivery = element.dataset.delivery;
+    renderCheckout();
+  },
   'apply-promo': () => applyPromo(),
   'quote-distance': () => quoteDistanceDelivery(),
   'pay-order': () => payForOrder(),

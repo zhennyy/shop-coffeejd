@@ -6,9 +6,14 @@ export const checkoutForm = {
   delivery: 'city', // city | pickup | post | distance
   city: '', // город из списка или '__other'
   other: '', // свой город (для «другой город», СДЭК/Почты и доставки по расстоянию)
-  address: '', phone: '', email: '', carrier: '',
+  address: '',
+  phone: '',
+  email: '',
+  carrier: '',
   quote: null, // { key, delivery, km } — рассчитанная доставка по расстоянию для адреса key
-  promo: '', promoPercent: 0, promoMessage: '',
+  promo: '',
+  promoPercent: 0,
+  promoMessage: '',
   errors: {}, // id поля → текст ошибки
 };
 
@@ -20,7 +25,7 @@ export const checkout = {
   isPaying: false,
 };
 
-const discountFor = (sum) => (checkoutForm.promoPercent ? Math.round(sum * checkoutForm.promoPercent / 100) : 0);
+const discountFor = (sum) => (checkoutForm.promoPercent ? Math.round((sum * checkoutForm.promoPercent) / 100) : 0);
 
 /** Сумма товаров со скидкой по промокоду */
 export function goodsTotal() {
@@ -30,12 +35,24 @@ export function goodsTotal() {
 
 export const discountAmount = () => discountFor(cartTotals().sum);
 
-export const isDeliveryFree = () => Boolean(checkout.info && checkout.info.freeFrom > 0 && checkoutForm.delivery !== 'pickup' && goodsTotal() >= checkout.info.freeFrom);
+export const isDeliveryFree = () =>
+  Boolean(
+    checkout.info &&
+    checkout.info.freeFrom > 0 &&
+    checkoutForm.delivery !== 'pickup' &&
+    goodsTotal() >= checkout.info.freeFrom,
+  );
 
 /** Ключ адреса: расчёт по расстоянию действителен, пока адрес не поменяли */
-export const addressKey = () => [checkoutForm.city, checkoutForm.other, checkoutForm.address].join('|').trim().toLowerCase();
+export const addressKey = () =>
+  [checkoutForm.city, checkoutForm.other, checkoutForm.address].join('|').trim().toLowerCase();
 
-const normalizeCity = (city) => String(city || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+const normalizeCity = (city) =>
+  String(city || '')
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .replace(/\s+/g, ' ');
 
 /** Стоимость доставки в копейках; null — пока неизвестна (нужен расчёт по адресу) */
 export function deliveryCost() {
@@ -50,8 +67,11 @@ export function deliveryCost() {
     const quote = checkoutForm.quote;
     return quote && quote.key === addressKey() ? quote.delivery : null;
   }
-  const wantedCity = checkoutForm.city === OTHER_CITY ? normalizeCity(checkoutForm.other) : normalizeCity(checkoutForm.city);
-  const knownCity = info.cities.find((city) => normalizeCity(city.city) === wantedCity || (city.city_en && normalizeCity(city.city_en) === wantedCity));
+  const wantedCity =
+    checkoutForm.city === OTHER_CITY ? normalizeCity(checkoutForm.other) : normalizeCity(checkoutForm.city);
+  const knownCity = info.cities.find(
+    (city) => normalizeCity(city.city) === wantedCity || (city.city_en && normalizeCity(city.city_en) === wantedCity),
+  );
   if (knownCity) return knownCity.price;
   return checkoutForm.city === OTHER_CITY ? info.otherPrice : 0;
 }

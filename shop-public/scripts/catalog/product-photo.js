@@ -18,14 +18,20 @@ function emojiFor(product) {
 }
 
 export function productPhotoHtml(product) {
-  if (product && product.photo) return `<img src="${escapeHtml(product.photo)}" alt="" loading="lazy" data-photo-fallback>`;
+  if (product && product.photo)
+    return `<img src="${escapeHtml(product.photo)}" alt="" loading="lazy" data-photo-fallback>`;
   return `<div class="noimg">${emojiFor(product || {})}</div>`;
 }
 
 /** Битое фото товара заменяем заглушкой. Событие error не всплывает — ловим на этапе погружения. */
 export function replaceBrokenPhotos() {
-  document.addEventListener('error', (event) => {
-    const image = event.target;
-    if (image instanceof HTMLImageElement && image.hasAttribute('data-photo-fallback')) image.outerHTML = BROKEN_PHOTO_HTML;
-  }, true);
+  document.addEventListener(
+    'error',
+    (event) => {
+      const image = event.target;
+      if (image instanceof HTMLImageElement && image.hasAttribute('data-photo-fallback'))
+        image.outerHTML = BROKEN_PHOTO_HTML;
+    },
+    true,
+  );
 }

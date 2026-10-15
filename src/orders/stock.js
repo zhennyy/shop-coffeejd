@@ -11,7 +11,10 @@ async function takeStockForOrder(order) {
     const neededQuantity = orderItem.quantity - (orderItem.stock_taken || 0);
     if (neededQuantity <= 0) continue;
     const takenQuantity = await inventory.takeFromStock(orderItem.product_id, neededQuantity, 'продажа', order.id);
-    await database.orderItem.update({ where: { id: orderItem.id }, data: { stock_taken: { increment: takenQuantity } } });
+    await database.orderItem.update({
+      where: { id: orderItem.id },
+      data: { stock_taken: { increment: takenQuantity } },
+    });
     if (takenQuantity < neededQuantity) {
       const unit = orderItem.unit ? quantityRules.unitLabel(orderItem) : 'шт.';
       shortages.push(`${orderItem.name || 'товар'} — не хватило ${neededQuantity - takenQuantity} ${unit}`);

@@ -17,7 +17,9 @@ async function sendImport(body) {
     const result = await callApi('/admin/stock-import', body, 1);
     showToast(importSummary(result));
     await reloadProducts();
-  } catch (error) { showToast(error.message); }
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 /** Выбранный файл отправляем на сервер в base64 */
@@ -25,7 +27,11 @@ export function listenToImportFile(fileInput) {
   fileInput.addEventListener('change', () => {
     const file = fileInput.files && fileInput.files[0];
     if (!file) return;
-    if (file.size > MAX_IMPORT_BYTES) { showToast('Файл слишком большой (до 5 МБ)'); fileInput.value = ''; return; }
+    if (file.size > MAX_IMPORT_BYTES) {
+      showToast('Файл слишком большой (до 5 МБ)');
+      fileInput.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       const base64 = String(reader.result).split(',')[1] || '';
@@ -43,11 +49,15 @@ async function importTeaSample() {
 
 function requestBackup() {
   showToast('Собираю резервную копию…');
-  callApi('/admin/backup', {}, 1).then(() => showToast('Готово — архив в чате с ботом 📦')).catch((error) => showToast(error.message));
+  callApi('/admin/backup', {}, 1)
+    .then(() => showToast('Готово — архив в чате с ботом 📦'))
+    .catch((error) => showToast(error.message));
 }
 
 function sendReport() {
-  callApi('/admin/report', { days: REPORT_DAYS, file: true }, 1).then(() => showToast('Отчёт за 30 дней отправлен в чат 📊')).catch((error) => showToast(error.message));
+  callApi('/admin/report', { days: REPORT_DAYS, file: true }, 1)
+    .then(() => showToast('Отчёт за 30 дней отправлен в чат 📊'))
+    .catch((error) => showToast(error.message));
 }
 
 export const catalogFileActions = {

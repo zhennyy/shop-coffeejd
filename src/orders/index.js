@@ -7,7 +7,15 @@ const customers = require('../customers');
 const { getOwnerId } = require('../owner');
 const { escapeHtml } = require('../utils/format');
 const { logError, ignoreExpectedError } = require('../utils/log');
-const { ORDER_FLOW, PAID_STATUSES, MANUAL_STATUSES, STATUS_LABELS, baseStatus, isPickup, statusLabel } = require('./status');
+const {
+  ORDER_FLOW,
+  PAID_STATUSES,
+  MANUAL_STATUSES,
+  STATUS_LABELS,
+  baseStatus,
+  isPickup,
+  statusLabel,
+} = require('./status');
 const { shopUrl, buyerText, buyerKeyboard, phoneOf, ownerText, ownerKeyboard } = require('./messages');
 const { takeStockForOrder, returnStockForOrder } = require('./stock');
 
@@ -22,14 +30,21 @@ const announceOrderChange = (orderId) => orderEvents.emit('changed', orderId);
 
 async function generateOrderCode() {
   for (;;) {
-    const candidateCode = Array.from({ length: ORDER_CODE_LENGTH }, () => ORDER_CODE_ALPHABET[Math.floor(Math.random() * ORDER_CODE_ALPHABET.length)]).join('');
-    if (!(await database.order.findFirst({ where: { order_code: candidateCode }, select: { id: true } }))) return candidateCode;
+    const candidateCode = Array.from(
+      { length: ORDER_CODE_LENGTH },
+      () => ORDER_CODE_ALPHABET[Math.floor(Math.random() * ORDER_CODE_ALPHABET.length)],
+    ).join('');
+    if (!(await database.order.findFirst({ where: { order_code: candidateCode }, select: { id: true } })))
+      return candidateCode;
   }
 }
 
 // Позиции заказов с названием и единицей товара (товар мог быть удалён — тогда name = null)
 async function getOrderItems(orderIds) {
-  const orderItems = await database.orderItem.findMany({ where: { order_id: { in: orderIds } }, orderBy: { id: 'asc' } });
+  const orderItems = await database.orderItem.findMany({
+    where: { order_id: { in: orderIds } },
+    orderBy: { id: 'asc' },
+  });
   const products = await database.product.findMany({
     where: { id: { in: [...new Set(orderItems.map((orderItem) => orderItem.product_id))] } },
     select: { id: true, name: true, name_en: true, unit: true, stock: true },
@@ -37,7 +52,13 @@ async function getOrderItems(orderIds) {
   const productById = new Map(products.map((product) => [product.id, product]));
   return orderItems.map((orderItem) => {
     const product = productById.get(orderItem.product_id);
-    return { ...orderItem, name: product?.name ?? null, name_en: product?.name_en ?? null, unit: product?.unit ?? null, stock: product?.stock ?? null };
+    return {
+      ...orderItem,
+      name: product?.name ?? null,
+      name_en: product?.name_en ?? null,
+      unit: product?.unit ?? null,
+      stock: product?.stock ?? null,
+    };
   });
 }
 
@@ -58,19 +79,46 @@ async function getOrder(orderId) {
 }
 
 // Заказ со статусом pending; total уже с учётом скидки и доставки. items — [{product_id, quantity, price}]
-async function createPendingOrder({ chatId, address, total, items, promoCode = null, discountPercent = 0, deliveryCity = null,
-  deliveryCost = 0, deliveryMethod = null, contact = null, carrier = null, addrRaw = null }) {
+async function createPendingOrder({
+  chatId,
+  address,
+  total,
+  items,
+  promoCode = null,
+  discountPercent = 0,
+  deliveryCity = null,
+  deliveryCost = 0,
+  deliveryMethod = null,
+  contact = null,
+  carrier = null,
+  addrRaw = null,
+}) {
   const orderId = await runInTransaction(async () => {
     const createdOrder = await database.order.create({
       data: {
-        chat_id: Number(chatId), status: 'pending', total, address, payment_provider: 'yookassa',
-        promo_code: promoCode, discount_percent: discountPercent, delivery_city: deliveryCity, delivery_cost: deliveryCost,
-        order_code: await generateOrderCode(), delivery_method: deliveryMethod || (deliveryCity ? 'city' : 'pickup'),
-        contact, carrier, addr_raw: addrRaw,
+        chat_id: Number(chatId),
+        status: 'pending',
+        total,
+        address,
+        payment_provider: 'yookassa',
+        promo_code: promoCode,
+        discount_percent: discountPercent,
+        delivery_city: deliveryCity,
+        delivery_cost: deliveryCost,
+        order_code: await generateOrderCode(),
+        delivery_method: deliveryMethod || (deliveryCity ? 'city' : 'pickup'),
+        contact,
+        carrier,
+        addr_raw: addrRaw,
       },
     });
     await database.orderItem.createMany({
-      data: items.map((orderLine) => ({ order_id: createdOrder.id, product_id: orderLine.product_id, quantity: orderLine.quantity, price: orderLine.price })),
+      data: items.map((orderLine) => ({
+        order_id: createdOrder.id,
+        product_id: orderLine.product_id,
+        quantity: orderLine.quantity,
+        price: orderLine.price,
+      })),
     });
     return createdOrder.id;
   });
@@ -88,16 +136,26 @@ async function notifyBuyer(bot, order) {
   const language = await customers.getLanguage(order.chat_id);
   // Старое сообщение покупатель мог уже удалить сам, а Telegram не даёт удалять сообщения старше 48 часов —
   // это нормально, новое сообщение всё равно отправляем.
-  if (order.status_msg_id) await bot.telegram.deleteMessage(order.chat_id, order.status_msg_id).catch(ignoreExpectedError);
+  if (order.status_msg_id)
+    await bot.telegram.deleteMessage(order.chat_id, order.status_msg_id).catch(ignoreExpectedError);
   const sentMessage = await bot.telegram
-    .sendMessage(order.chat_id, await buyerText(order, language), { parse_mode: 'HTML', reply_markup: buyerKeyboard(order, language) })
+    .sendMessage(order.chat_id, await buyerText(order, language), {
+      parse_mode: 'HTML',
+      reply_markup: buyerKeyboard(order, language),
+    })
     .catch(logError(`Не получилось написать покупателю (заказ ${order.code})`));
-  if (sentMessage) await database.order.update({ where: { id: order.id }, data: { status_msg_id: sentMessage.message_id } });
+  if (sentMessage)
+    await database.order.update({ where: { id: order.id }, data: { status_msg_id: sentMessage.message_id } });
 }
 
 async function notifyOwnerAboutNewOrder(bot, order) {
   if (!getOwnerId()) return;
-  await bot.telegram.sendMessage(getOwnerId(), await ownerText(order), { parse_mode: 'HTML', reply_markup: ownerKeyboard(order), disable_web_page_preview: true })
+  await bot.telegram
+    .sendMessage(getOwnerId(), await ownerText(order), {
+      parse_mode: 'HTML',
+      reply_markup: ownerKeyboard(order),
+      disable_web_page_preview: true,
+    })
     .catch(logError('Не получилось уведомить владельца о заказе'));
 }
 
@@ -109,8 +167,10 @@ async function messageOwner(bot, text, extra) {
 
 async function warnOwnerAboutShortage(bot, order, shortages) {
   if (!shortages.length) return;
-  await messageOwner(bot,
-    `⚠️ Заказ № ${order.code} оплачен, но на складе не хватило:\n${shortages.join('\n')}\n\nСвяжитесь с покупателем: дозаказать товар или вернуть часть денег.`);
+  await messageOwner(
+    bot,
+    `⚠️ Заказ № ${order.code} оплачен, но на складе не хватило:\n${shortages.join('\n')}\n\nСвяжитесь с покупателем: дозаказать товар или вернуть часть денег.`,
+  );
 }
 
 // Сменить статус заказа (из админки или кнопкой в Telegram)
@@ -120,17 +180,27 @@ async function changeStatus(bot, orderId, newStatus, { track } = {}) {
   if (!order) throw new Error('Заказ не найден');
   const wasPaid = PAID_STATUSES.has(order.base);
   const becomesPaid = PAID_STATUSES.has(newStatus);
-  const newTrack = track === undefined ? order.track : String(track || '').trim().slice(0, 60) || null;
+  const newTrack =
+    track === undefined
+      ? order.track
+      : String(track || '')
+          .trim()
+          .slice(0, 60) || null;
   if (order.base === newStatus && newTrack === order.track) return order;
 
   let shortages = [];
   await runInTransaction(async () => {
     if (wasPaid && newStatus === 'cancelled') await returnStockForOrder(order); // товар вернулся на склад
-    if (!wasPaid && becomesPaid) shortages = await takeStockForOrder(order);   // вернули в работу / оплачен вручную
+    if (!wasPaid && becomesPaid) shortages = await takeStockForOrder(order); // вернули в работу / оплачен вручную
     const now = toSqliteTimestamp();
     await database.order.update({
       where: { id: orderId },
-      data: { status: newStatus, track: newTrack, status_at: now, ...(becomesPaid && !order.paid_at ? { paid_at: now } : {}) },
+      data: {
+        status: newStatus,
+        track: newTrack,
+        status_at: now,
+        ...(becomesPaid && !order.paid_at ? { paid_at: now } : {}),
+      },
     });
   });
   const updatedOrder = await getOrder(orderId);
@@ -143,7 +213,9 @@ async function changeStatus(bot, orderId, newStatus, { track } = {}) {
 // Id платежа, которым должен оплачиваться заказ (у старых заказов он лежит в статусе)
 function expectedPaymentId(order) {
   if (order.payment_id) return order.payment_id;
-  return String(order.status).startsWith('awaiting_payment:') ? String(order.status).slice('awaiting_payment:'.length) : null;
+  return String(order.status).startsWith('awaiting_payment:')
+    ? String(order.status).slice('awaiting_payment:'.length)
+    : null;
 }
 
 // Оплата пришла (вебхук ЮKassa). Засчитываем платёж только один раз и только «свой»:
@@ -151,7 +223,7 @@ function expectedPaymentId(order) {
 async function markPaid(bot, orderId, paymentId) {
   const order = await getOrder(orderId);
   if (!order || order.paid_at || PAID_STATUSES.has(order.base)) return false; // деньги по заказу уже засчитаны
-  if (!paymentId || expectedPaymentId(order) !== paymentId) return false;      // это не платёж этого заказа
+  if (!paymentId || expectedPaymentId(order) !== paymentId) return false; // это не платёж этого заказа
   const wasCancelled = order.base === 'cancelled';
   let shortages = [];
   let exceededPromoCode = null;
@@ -164,7 +236,9 @@ async function markPaid(bot, orderId, paymentId) {
     await database.order.update({ where: { id: orderId }, data: { status: 'paid', status_at: now, paid_at: now } });
     if (freshOrder.promo_code) {
       // промокод могли удалить, пока заказ ждал оплату, — тогда считать нечего (update падает «запись не найдена»)
-      const promoCode = await database.promoCode.update({ where: { code: freshOrder.promo_code }, data: { used_count: { increment: 1 } } }).catch(ignoreExpectedError);
+      const promoCode = await database.promoCode
+        .update({ where: { code: freshOrder.promo_code }, data: { used_count: { increment: 1 } } })
+        .catch(ignoreExpectedError);
       if (promoCode && promoCode.max_uses !== null && promoCode.used_count > promoCode.max_uses) {
         exceededPromoCode = `${promoCode.code} (${promoCode.used_count}/${promoCode.max_uses})`;
       }
@@ -179,10 +253,16 @@ async function markPaid(bot, orderId, paymentId) {
   await notifyOwnerAboutNewOrder(bot, paidOrder);
   await warnOwnerAboutShortage(bot, paidOrder, shortages);
   if (exceededPromoCode) {
-    await messageOwner(bot, `⚠️ Промокод ${exceededPromoCode} превысил лимит использований — заказ № ${paidOrder.code} оплачен со скидкой.`);
+    await messageOwner(
+      bot,
+      `⚠️ Промокод ${exceededPromoCode} превысил лимит использований — заказ № ${paidOrder.code} оплачен со скидкой.`,
+    );
   }
   if (wasCancelled) {
-    await messageOwner(bot, `⚠️ Заказ № ${paidOrder.code} был отменён, но покупатель всё-таки оплатил — вернула его в работу.`);
+    await messageOwner(
+      bot,
+      `⚠️ Заказ № ${paidOrder.code} был отменён, но покупатель всё-таки оплатил — вернула его в работу.`,
+    );
   }
   return true;
 }
@@ -195,13 +275,39 @@ async function rateOrder(bot, chatId, orderId, stars) {
   await database.order.update({ where: { id: orderId }, data: { rating: stars } });
   if (getOwnerId()) {
     const buyerName = (await customers.getName(chatId)) || 'Покупатель';
-    await messageOwner(bot, `${'⭐'.repeat(stars)} ${escapeHtml(buyerName)} оценил(а) заказ № ${order.code} на ${stars}/5`, { parse_mode: 'HTML' });
+    await messageOwner(
+      bot,
+      `${'⭐'.repeat(stars)} ${escapeHtml(buyerName)} оценил(а) заказ № ${order.code} на ${stars}/5`,
+      { parse_mode: 'HTML' },
+    );
   }
   return getOrder(orderId);
 }
 
 module.exports = {
-  ORDER_FLOW, PAID_STATUSES, MANUAL_STATUSES, STATUS_LABELS, baseStatus, generateOrderCode, getOrder, getOrderItems, getItemsByOrderId,
-  createPendingOrder, cancelIfNotPaid, statusLabel, buyerText, buyerKeyboard, notifyBuyer, ownerText, ownerKeyboard,
-  notifyOwnerAboutNewOrder, changeStatus, markPaid, rateOrder, shopUrl, phoneOf, isPickup, orderEvents,
+  ORDER_FLOW,
+  PAID_STATUSES,
+  MANUAL_STATUSES,
+  STATUS_LABELS,
+  baseStatus,
+  generateOrderCode,
+  getOrder,
+  getOrderItems,
+  getItemsByOrderId,
+  createPendingOrder,
+  cancelIfNotPaid,
+  statusLabel,
+  buyerText,
+  buyerKeyboard,
+  notifyBuyer,
+  ownerText,
+  ownerKeyboard,
+  notifyOwnerAboutNewOrder,
+  changeStatus,
+  markPaid,
+  rateOrder,
+  shopUrl,
+  phoneOf,
+  isPickup,
+  orderEvents,
 };
