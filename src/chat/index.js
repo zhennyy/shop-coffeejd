@@ -7,6 +7,7 @@ const { database } = require('../database');
 const orders = require('../orders');
 const customers = require('../customers');
 const messages = require('./messages');
+const { escapeHtml } = require('../utils/format');
 
 const REPLY_WINDOW_MS = 15 * 60_000;         // после «💬 Написать» следующее сообщение владелицы уйдёт покупателю
 const ACKNOWLEDGE_INTERVAL_MS = 30 * 60_000; // «передали менеджеру» — не чаще раза в 30 минут
@@ -15,7 +16,6 @@ const TELEGRAM_CAPTION_LIMIT = 950;
 const MEDIA_LABELS = { voice: '🎤 Голосовое', audio: '🎵 Аудио', document: '📎 Файл', video: '🎬 Видео', video_note: '⭕️ Видеосообщение', sticker: 'Стикер' };
 
 const isOwnerChat = (chatId) => Boolean(process.env.OWNER_CHAT_ID) && String(chatId) === String(process.env.OWNER_CHAT_ID);
-const escapeHtml = orders.escapeHtml;
 const truncate = (text, maxLength) => (text.length > maxLength ? text.slice(0, maxLength - 1) + '…' : text);
 
 // Экранируем и укладываемся в лимит Telegram (после экранирования «&» превращается в «&amp;»)

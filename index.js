@@ -8,11 +8,13 @@ const { disconnect } = require('./src/database');
 const { bot, launchBot, showcaseHelpers } = require('./src/bot');
 const { startWebhookServer } = require('./src/server');
 const { startSchedulers } = require('./src/schedulers');
+const { startCrmSync } = require('./src/crm');
 
 process.on('unhandledRejection', (rejectionReason) => console.error('Необработанная ошибка:', rejectionReason?.message || rejectionReason));
 
 async function start() {
   await initializeDatabase();
+  startCrmSync();
   await launchBot();
   startWebhookServer(bot, showcaseHelpers);
   const stopSchedulers = startSchedulers(bot);

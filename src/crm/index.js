@@ -3,6 +3,7 @@
 const axios = require('axios');
 const customers = require('../customers');
 const { asReceiptLine } = require('../inventory/quantity');
+const { getOrder, orderEvents } = require('../orders');
 
 const MAX_ATTEMPTS = 3;
 const RETRY_PAUSE_MS = 1500;
@@ -12,7 +13,6 @@ async function sendOrderToCrm(orderId) {
   const crmSecret = process.env.CRM_SECRET;
   if (!crmUrl || !crmSecret) return;
   try {
-    const { getOrder } = require('../orders');
     const order = await getOrder(orderId);
     if (!order) return;
     const requestBody = {
@@ -48,4 +48,10 @@ async function sendOrderToCrm(orderId) {
 // Не ждём ответа CRM: заказ оформляется дальше, отправка идёт в фоне
 const pushOrder = (orderId) => { sendOrderToCrm(orderId); };
 
-module.exports = { pushOrder };
+// Подписка на заказы: каждый новый заказ и каждая смена статуса уходят в CRM. Вызывается один раз при запуске.
+function startCrmSync() {
+  orderEvents.on('changed', pushOrder);
+  return () => orderEvents.off('changed', pushOrder);
+}
+
+module.exports = { pushOrder, startCrmSync };
