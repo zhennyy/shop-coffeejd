@@ -39,6 +39,16 @@ async function runExtraChecks(runner, shop) {
   await buyer.click('#aiGo');
   await buyer.waitForSelector('#aiGrid .empty');
   check('AI-подбор отвечает', /ничего не нашлось/.test(await buyer.locator('#aiGrid').innerText()));
+  await tabButton(buyer, 'Корзина').click();
+  await buyer.evaluate(() => window.Telegram.WebApp.MainButton.callback());
+  await buyer.waitForSelector('#coConsent');
+  await buyer.locator('.consent-check a').click();
+  const openedLinks = await buyer.evaluate(() => window.__telegramLog.links);
+  check(
+    'ссылка на согласие открывается через Telegram и не ставит галочку',
+    /\/shop\/legal\/consent\.html$/.test(openedLinks.at(-1) || '') && !(await buyer.isChecked('#coConsent')),
+    openedLinks.at(-1),
+  );
   await buyer.context().close();
 
   const owner = await openPage(OWNER_ID, { name: 'owner-extra' });

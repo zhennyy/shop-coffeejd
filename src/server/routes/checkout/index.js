@@ -1,6 +1,6 @@
 // Оформление и оплата прямо в витрине. Всё считаем на сервере: цены — из базы, доставка — из тарифов, скидка — из промокода.
 const express = require('express');
-const { database } = require('../../../database');
+const { database, toSqliteTimestamp } = require('../../../database');
 const { translate } = require('../../../i18n');
 const cart = require('../../../cart');
 const pricing = require('../../../pricing');
@@ -160,6 +160,7 @@ function createCheckoutRouter({ bot, shopAuth, isRequestAllowed }) {
           contact,
           carrier: resolvedDelivery.carrier,
           addrRaw: resolvedDelivery.addrRaw,
+          consentAt: toSqliteTimestamp(), // согласие проверено в orderPostValidator
         });
         const createdOrder = await database.order.findUnique({ where: { id: orderId }, select: { order_code: true } });
         const orderCode = createdOrder.order_code || String(orderId);

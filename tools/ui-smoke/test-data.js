@@ -93,6 +93,7 @@ async function prepareShop(shop, samplePhotoPng) {
       address: 'Невский проспект, 10, кв. 5',
       phone: '+7 900 111-22-33',
       promo: 'COFFEE10',
+      consent: true,
     }),
     'заказ 3',
   );

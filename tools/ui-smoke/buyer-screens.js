@@ -71,6 +71,20 @@ async function runBuyerScreens(runner, shop) {
   // сценарий: самовывоз → оплата → заказ виден в «Мои заказы»
   await page.locator('.tile', { hasText: 'Самовывоз' }).click();
   await page.fill('#coPhone', '+7 900 123-45-67');
+  // 152-ФЗ: без галочки согласия оплатить нельзя — подсказка, заказ не создаётся, ссылка на оплату не открывается
+  check('галочка согласия не отмечена заранее', !(await page.isChecked('#coConsent')));
+  const ordersBeforeConsent = await shop.database.order.count();
+  await pressMainButton(page);
+  await snap(page, 'b20a-checkout-consent-required', { keepToast: true });
+  check(
+    'без согласия оплата заблокирована',
+    (await shop.database.order.count()) === ordersBeforeConsent &&
+      (await page.evaluate(() => window.__telegramLog.links.length)) === 0 &&
+      /Отметьте согласие/.test(await page.locator('#toast').innerText()),
+    await page.locator('#toast').innerText(),
+  );
+  await page.check('#coConsent');
+  await snap(page, 'b20b-checkout-consent-given');
   await pressMainButton(page);
   await page.waitForSelector('#v-orders.on .order');
   await runner.settle(page);
@@ -120,7 +134,16 @@ async function runBuyerScreens(runner, shop) {
   await snap(dark, 'b29-catalog-dark');
   await dark.locator('#grid .card', { hasText: 'Эфиопия' }).click();
   await snap(dark, 'b30-sheet-dark');
+  await dark.locator('#sheet .x').click();
+  await dark.locator('#grid .card', { hasText: 'Улун Те Гуан Инь' }).locator('.add').click();
+  await tabButton(dark, 'Корзина').click();
+  await pressMainButton(dark);
+  await dark.locator('.tile', { hasText: 'Самовывоз' }).click();
+  await snap(dark, 'b31-checkout-dark');
+  await dark.check('#coConsent');
+  await snap(dark, 'b32-checkout-dark-consent-given');
   await dark.context().close();
+  await shop.database.cartItem.deleteMany({ where: { chat_id: BUYER_ID } }); // дальше проверки начинают с пустой корзины
 }
 
 module.exports = { runBuyerScreens };

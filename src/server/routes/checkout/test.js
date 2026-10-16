@@ -13,7 +13,8 @@ const receiptSum = (fiscalReceipt) =>
     0,
   );
 const countCartRows = (chatId) => shop.database.cartItem.count({ where: { chat_id: chatId } });
-const placeOrder = (orderForm) => shop.call(BUYER_ID, 'POST', '/shop-api/order', orderForm);
+// согласие на обработку данных (152-ФЗ) отмечено, если тест не говорит иного
+const placeOrder = (orderForm) => shop.call(BUYER_ID, 'POST', '/shop-api/order', { consent: true, ...orderForm });
 
 before(async () => {
   shop = await testHelpers.start();
@@ -55,6 +56,26 @@ test('самовывоз: заказ создан, доставка 0, корз�
   assert.equal(order.delivery_method, 'pickup');
   assert.equal(await countCartRows(BUYER_ID), 0);
   assert.equal((await placeOrder({ delivery: 'pickup' })).status, 400); // корзина пуста
+});
+
+test('152-ФЗ: без согласия на обработку данных заказ не создаётся, с согласием — время согласия в заказе', async () => {
+  const [product] = await actions.productsInStock();
+  await actions.setCart(BUYER_ID, [[product.id, 1]]);
+  const ordersBefore = await shop.database.order.count();
+  for (const consent of [undefined, false, 'true', 1]) {
+    const refused = await placeOrder({ delivery: 'pickup', phone: '89001234567', consent });
+    assert.equal(refused.status, 400, `consent=${consent}`);
+    assert.match(refused.body.error, /согласие на обработку персональных данных/);
+  }
+  assert.equal(await shop.database.order.count(), ordersBefore, 'заказ без согласия не создан');
+  assert.equal(await countCartRows(BUYER_ID), 1, 'корзина не тронута');
+
+  const startedAt = Date.now();
+  const accepted = await placeOrder({ delivery: 'pickup', phone: '89001234567', consent: true });
+  assert.equal(accepted.status, 200, JSON.stringify(accepted.body));
+  const order = await actions.findOrder(accepted.body.id);
+  assert.match(order.consent_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/, 'тот же формат, что у других дат');
+  assert.ok(Math.abs(new Date(order.consent_at + 'Z').getTime() - startedAt) < 60000);
 });
 
 test('СДЭК: фиксированная цена перевозчика; неизвестный перевозчик отклоняется', async () => {

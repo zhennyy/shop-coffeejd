@@ -1,5 +1,7 @@
 // Резервная копия магазина одним ZIP-архивом (без сторонних библиотек).
 // Внутри: каталог, заказы, промокоды, тарифы доставки (JSON и CSV для Excel) и все фото товаров.
+// Архив уходит владелице через Telegram (зарубежный сервис), поэтому по 152-ФЗ в нём нет персональных данных
+// покупателей: адрес, телефон и e-mail из заказов убираем — они остаются в базе на нашем сервере (ночная копия).
 const fs = require('node:fs');
 const path = require('node:path');
 const { database } = require('../database');
@@ -93,6 +95,8 @@ async function makeBackup({ uploadsDir, photosDir }) {
   const settings = await database.setting.findMany();
   const messages = await database.message.findMany({ orderBy: { id: 'asc' } });
 
+  const ordersWithoutPersonalData = allOrders.map(({ address, contact, addr_raw, ...orderFields }) => orderFields);
+
   const archiveFiles = [];
   const photoDirectories = { uploads: uploadsDir, photos: photosDir };
   for (const product of products) {
@@ -112,14 +116,15 @@ async function makeBackup({ uploadsDir, photosDir }) {
     stock: product.stock,
     description: product.description,
   }));
-  const orderRows = allOrders.map((order) => ({
+  const orderRows = ordersWithoutPersonalData.map((order) => ({
     id: order.id,
     code: order.order_code,
     created_at: order.created_at,
     status: String(order.status || '').split(':')[0],
     total_rub: order.total / 100,
     delivery_rub: (order.delivery_cost || 0) / 100,
-    address: order.address,
+    delivery_method: order.delivery_method,
+    delivery_city: order.delivery_city,
     promo: order.promo_code,
     track: order.track,
     rating: order.rating,
@@ -127,7 +132,7 @@ async function makeBackup({ uploadsDir, photosDir }) {
   archiveFiles.push(
     { name: 'catalog.json', data: JSON.stringify(products, null, 2) },
     { name: 'catalog.csv', data: toCsv(catalogRows) },
-    { name: 'orders.json', data: JSON.stringify({ orders: allOrders, items: orderItems }, null, 2) },
+    { name: 'orders.json', data: JSON.stringify({ orders: ordersWithoutPersonalData, items: orderItems }, null, 2) },
     { name: 'orders.csv', data: toCsv(orderRows) },
     { name: 'promo_codes.json', data: JSON.stringify(promoCodes, null, 2) },
     { name: 'delivery_rates.json', data: JSON.stringify(deliveryRates, null, 2) },
@@ -135,7 +140,7 @@ async function makeBackup({ uploadsDir, photosDir }) {
     { name: 'messages.json', data: JSON.stringify(messages, null, 2) },
     {
       name: 'README.txt',
-      data: `Резервная копия CoFFeeJD от ${timestamp.replace('_', ' ')} (МСК).\n\ncatalog.csv и orders.csv открываются в Excel/Numbers.\nphotos/ — фото товаров (номер в начале — id товара).\n\nВ архиве есть адреса покупателей — храните его у себя и не выкладывайте на GitHub.\n`,
+      data: `Резервная копия CoFFeeJD от ${timestamp.replace('_', ' ')} (МСК).\n\ncatalog.csv и orders.csv открываются в Excel/Numbers.\nphotos/ — фото товаров (номер в начале — id товара).\n\nАдресов, телефонов и e-mail покупателей в архиве нет (152-ФЗ): они хранятся только в базе на сервере и видны в админке.\nВ messages.json — переписка с покупателями: храните архив у себя и не выкладывайте на GitHub.\n`,
     },
   );
   return {

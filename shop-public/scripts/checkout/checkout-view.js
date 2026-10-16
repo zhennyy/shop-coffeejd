@@ -6,6 +6,7 @@ import { formatAmount, formatRubles } from '../utils/format.js';
 import { cartTotals, cartLines } from '../cart/cart-model.js';
 import { productName, isSoldByAmount } from '../catalog/product-helpers.js';
 import { updateMainButton } from '../navigation.js';
+import { consentHtml, listenToConsentCheckbox } from './consent.js';
 import {
   checkoutForm,
   checkout,
@@ -188,7 +189,8 @@ export function renderCheckout() {
       ${checkoutForm.promoMessage ? `<div class="fld ok">✓ ${escapeHtml(checkoutForm.promoMessage)}</div>` : ''}
     </div>
     ${summaryHtml()}
-    ${isInsideTelegram ? '' : `<button class="btn" data-action="pay-order">${cost == null ? 'Рассчитать и оформить' : 'Оплатить · ' + formatRubles(total)}</button>`}
+    ${consentHtml()}
+    ${isInsideTelegram ? '' : `<button class="btn${checkoutForm.consent ? '' : ' blocked'}" data-action="pay-order">${cost == null ? 'Рассчитать и оформить' : 'Оплатить · ' + formatRubles(total)}</button>`}
     <div class="note">${texts().checkoutNote} Деньги списываются только после вашего подтверждения оплаты.</div>`;
   listenToCheckoutFields();
   updateMainButton();
@@ -221,6 +223,7 @@ function listenToCheckoutFields() {
   bindField('coPhone', 'phone');
   bindField('coEmail', 'email');
   bindField('coPromo', 'promo');
+  listenToConsentCheckbox();
   // цена зависит от города/адреса — пересчитываем, когда покупатель закончил ввод
   if (getElement('coOther') && checkoutForm.delivery === 'city')
     getElement('coOther').addEventListener('change', () => renderCheckout());

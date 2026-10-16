@@ -67,6 +67,7 @@ test('подписки: создание, ограничения, запуск, 
     city: 'Москва',
     address: 'ул. Ленина, 1',
     phone: '89001234567',
+    consent: true,
   });
   assert.equal(orderResponse.status, 200);
   const subscribe = (chatId, body) => shop.call(chatId, 'POST', '/shop-api/subscriptions', body);

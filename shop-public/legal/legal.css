@@ -1,0 +1,99 @@
+/* Юридические страницы магазина: те же цвета, что у витрины (светлая и тёмная тема), удобно читать с телефона */
+:root {
+  --bg: #f5f3f0;
+  --card: #ffffff;
+  --text: #1f2328;
+  --muted: #7b8088;
+  --line: #ebe7e2;
+  --accent: #7a4a2b;
+  --banner-bg: #fff3bf;
+  --banner-text: #5c4400;
+  --banner-line: #fcc419;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #141518;
+    --card: #1d1f23;
+    --text: #f1f3f5;
+    --muted: #9aa0a6;
+    --line: #2b2e33;
+    --accent: #d4a276;
+    --banner-bg: #3d3200;
+    --banner-text: #ffe066;
+    --banner-line: #8a6d00;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font:
+    15px/1.5 -apple-system,
+    BlinkMacSystemFont,
+    'SF Pro Text',
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+}
+main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 16px 16px 40px;
+}
+.template-banner {
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border: 1px solid var(--banner-line);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+h1 {
+  font-size: 22px;
+  line-height: 1.25;
+  margin: 0 0 4px;
+}
+.updated {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 0 0 16px;
+}
+section {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 4px 16px 12px;
+  margin-bottom: 12px;
+}
+h2 {
+  font-size: 16px;
+  margin: 12px 0 6px;
+}
+p,
+li {
+  margin: 6px 0;
+}
+ul {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+a {
+  color: var(--accent);
+}
+.placeholder {
+  background: var(--banner-bg);
+  color: var(--banner-text);
+  border-radius: 4px;
+  padding: 0 3px;
+}
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  font-size: 14px;
+  margin-top: 16px;
+}

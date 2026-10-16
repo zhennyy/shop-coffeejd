@@ -48,6 +48,7 @@ async function createSubscription(chatId, orderId, intervalDays) {
       carrier: order.carrier,
       address: order.addr_raw,
       contact: order.contact,
+      consent_at: order.consent_at, // согласие на обработку данных — из исходного заказа
     },
   });
   return subscription.id;
@@ -219,6 +220,9 @@ async function processDueSubscription(bot, subscription, today) {
     contact: subscription.contact,
     carrier: resolvedDelivery.carrier,
     addrRaw: resolvedDelivery.addrRaw,
+    // Заказ собирает сервер по данным подписки, покупатель ничего заново не вводит —
+    // поэтому согласие переносим из подписки (а она — из заказа, по которому оформлена).
+    consentAt: subscription.consent_at,
   });
   let payment;
   try {

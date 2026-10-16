@@ -33,3 +33,13 @@ test('без подписи витрина недоступна, старая в
   assert.equal((await shop.call(null, 'GET', '/shop-api/catalog')).status, 401);
   assert.equal((await shop.call(null, 'GET', '/admin')).status, 404);
 });
+
+test('юридические страницы (152-ФЗ) открываются без подписи Telegram', async () => {
+  for (const pageName of ['privacy', 'consent', 'offer']) {
+    const response = await fetch(`${shop.base}/shop/legal/${pageName}.html`);
+    assert.equal(response.status, 200, pageName);
+    assert.match(response.headers.get('content-type'), /text\/html/);
+    assert.match(await response.text(), /Шаблон: заполните реквизиты перед запуском/);
+  }
+  assert.equal((await fetch(`${shop.base}/shop/legal/legal.css`)).status, 200);
+});

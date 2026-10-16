@@ -93,12 +93,21 @@ test('каталог, корзина и оформление заказа в ч�
   assert.match(lastSentText(), /промокод/i);
   await sendText(BUYER_ID, '-');
   assert.match(lastSentText(), /Итого/);
+  assert.match(lastSentText(), /согласие на обработку персональных данных/);
+  assert.equal(findCallbackButton(/Согласен на обработку данных/), 'checkout_consent');
   const ordersBefore = await shop.database.order.count();
+  // 152-ФЗ: без согласия оплатить нельзя
+  await pressButton(BUYER_ID, 'pay_yookassa');
+  assert.equal(await shop.database.order.count(), ordersBefore);
+  assert.match(lastSentText(), /Сначала подтвердите согласие/);
+  await pressButton(BUYER_ID, 'checkout_consent');
+  assert.match(lastSentText(), /согласие получено/);
   await pressButton(BUYER_ID, 'pay_yookassa');
   assert.equal(await shop.database.order.count(), ordersBefore + 1);
   const createdOrder = await shop.database.order.findFirst({ where: { chat_id: BUYER_ID }, orderBy: { id: 'desc' } });
   assert.match(createdOrder.status, /^awaiting_payment:/);
   assert.equal(createdOrder.delivery_city, 'Москва');
+  assert.match(createdOrder.consent_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   assert.equal(await shop.database.cartItem.count({ where: { chat_id: BUYER_ID } }), 0, 'корзина очищена');
   assert.match(lastSentText(), /оплат/i);
 });
@@ -121,6 +130,13 @@ test('команды владелицы: промокод, остаток, за�
   assert.equal((await shop.database.deliveryRate.findUnique({ where: { city: 'Казань' } })).price, 90000);
   await sendText(OWNER_ID, '/deldelivery казань');
   assert.equal((await shop.database.deliveryRate.findUnique({ where: { city: 'Казань' } })).active, 0);
+
+  telegramCalls = [];
+  await sendText(OWNER_ID, '/orders');
+  const ordersList = sentTexts().join('\n');
+  assert.match(ordersList, /Москва/, 'город в списке заказов есть');
+  assert.doesNotMatch(ordersList, /Ленина/, '152-ФЗ: адреса покупателя в Telegram нет');
+  assert.match(ordersList, /Контакты и адрес — в админке/);
 
   await sendText(OWNER_ID, '/report 30');
   assert.match(lastSentText(), /Отчёт за 30/);

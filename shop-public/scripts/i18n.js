@@ -26,6 +26,11 @@ const TEXTS = {
     cartEmpty: 'Корзина пока пуста',
     toCatalog: 'Перейти в каталог',
     checkoutNote: 'Оплата картой или СБП через ЮKassa — безопасно.',
+    // link(страница, текст) — ссылка на документ из legal/
+    consentCheckbox: (link) => `Я даю согласие на ${link('consent', 'обработку персональных данных')}`,
+    consentTerms: (link) =>
+      `Оформляя заказ, вы принимаете условия ${link('offer', 'оферты')} и ${link('privacy', 'политику обработки персональных данных')}`,
+    consentRequired: 'Отметьте согласие на обработку данных',
     ordersTitle: 'Мои заказы',
     ordersEmpty: 'Заказов пока нет',
     delivery: 'Доставка',
@@ -60,6 +65,10 @@ const TEXTS = {
     cartEmpty: 'Your cart is empty',
     toCatalog: 'Go to catalog',
     checkoutNote: 'Pay by card or SBP via ЮKassa — secure.',
+    consentCheckbox: (link) => `I consent to the ${link('consent', 'processing of my personal data')}`,
+    consentTerms: (link) =>
+      `By placing the order, you accept the ${link('offer', 'public offer')} and the ${link('privacy', 'privacy policy')}`,
+    consentRequired: 'Please tick the consent to data processing',
     ordersTitle: 'My orders',
     ordersEmpty: 'No orders yet',
     delivery: 'Delivery',

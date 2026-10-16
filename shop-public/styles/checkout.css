@@ -148,3 +148,78 @@
   font-size: 12.5px;
   margin-top: 4px;
 }
+
+/* Согласие на обработку персональных данных — перед кнопкой оплаты */
+.co .consent {
+  border: 1.5px solid transparent;
+}
+.co .consent.bad {
+  border-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 6%, var(--card));
+}
+.consent-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 14.5px;
+}
+/* своя галочка: родная в тёмной теме Telegram — ярко-белый квадрат */
+.co .consent-check input {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  display: grid;
+  place-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid var(--muted);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.co .consent-check input::after {
+  content: '';
+  width: 6px;
+  height: 11px;
+  border: solid var(--card);
+  border-width: 0 2.5px 2.5px 0;
+  transform: translateY(-1px) rotate(45deg);
+  opacity: 0;
+}
+.co .consent-check input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.co .consent-check input:checked::after {
+  opacity: 1;
+}
+.co .consent-check input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.co .consent.bad .consent-check input {
+  border-color: var(--bad);
+}
+.consent-check span {
+  padding-top: 1px;
+}
+.consent a {
+  color: var(--accent);
+}
+.consent .ferr {
+  margin: 6px 0 0 32px;
+}
+.consent-terms {
+  margin: 8px 0 0 32px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.btn.blocked {
+  opacity: 0.55;
+}

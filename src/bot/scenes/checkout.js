@@ -1,6 +1,6 @@
-// Оформление заказа в чате: город → адрес → промокод → итог → оплата
+// Оформление заказа в чате: город → адрес → промокод → итог и согласие на обработку данных → оплата
 const { Scenes, Markup } = require('telegraf');
-const { database } = require('../../database');
+const { database, toSqliteTimestamp } = require('../../database');
 const { getCart, clearCart } = require('../../cart');
 const { translate } = require('../../i18n');
 const pricing = require('../../pricing');
@@ -8,10 +8,34 @@ const customers = require('../../customers');
 const orders = require('../../orders');
 const { getDeliverySettings } = require('../../settings');
 const { formatOrderLine } = require('../../inventory/quantity');
+const { legalPageUrl } = require('../../orders/messages');
 
 const SUMMARY_STEP_INDEX = 3;
 const formatRublesShort = (kopecks) => (kopecks / 100).toFixed(0) + ' ₽';
 const languageOf = (context) => customers.getLanguage(context.chat.id);
+
+const payKeyboard = (language) =>
+  Markup.inlineKeyboard([
+    Markup.button.callback(translate(language, 'payButton'), 'pay_yookassa'),
+    Markup.button.callback(translate(language, 'cancelButton'), 'checkout_cancel'),
+  ]);
+
+// 152-ФЗ: до оплаты — кнопка согласия на обработку данных и ссылки на документы (если адрес витрины настроен)
+function consentKeyboard(language) {
+  const documentButtons = [
+    ['consent', 'consentDocumentButton'],
+    ['offer', 'offerDocumentButton'],
+    ['privacy', 'privacyDocumentButton'],
+  ]
+    .map(([pageName, textKey]) => [legalPageUrl(pageName), translate(language, textKey)])
+    .filter(([pageUrl]) => pageUrl)
+    .map(([pageUrl, buttonText]) => Markup.button.url(buttonText, pageUrl));
+  return Markup.inlineKeyboard([
+    [Markup.button.callback(translate(language, 'consentButton'), 'checkout_consent')],
+    ...(documentButtons.length ? [documentButtons] : []),
+    [Markup.button.callback(translate(language, 'cancelButton'), 'checkout_cancel')],
+  ]);
+}
 
 async function buildCityKeyboard(cityOptions, language) {
   const cityButtons = cityOptions.map((cityOption, optionIndex) =>
@@ -134,13 +158,8 @@ async function showPromoOrSummary(context) {
   );
   summary += translate(language, 'totalSummary', formatRublesShort(priceQuote.total));
 
-  await context.reply(
-    summary,
-    Markup.inlineKeyboard([
-      Markup.button.callback(translate(language, 'payButton'), 'pay_yookassa'),
-      Markup.button.callback(translate(language, 'cancelButton'), 'checkout_cancel'),
-    ]),
-  );
+  if (wizardState.consentAt) await context.reply(summary, payKeyboard(language));
+  else await context.reply(summary + translate(language, 'consentPrompt'), consentKeyboard(language));
   return context.wizard.next();
 }
 
@@ -199,12 +218,22 @@ checkoutScene.action('checkout_cancel', async (context) => {
   return context.scene.leave();
 });
 
+// Согласие на обработку персональных данных — запоминаем время, дальше можно платить
+checkoutScene.action('checkout_consent', async (context) => {
+  const language = await languageOf(context);
+  await context.answerCbQuery();
+  context.wizard.state.consentAt = toSqliteTimestamp();
+  await context.reply(translate(language, 'consentAccepted'), payKeyboard(language));
+});
+
 checkoutScene.action('pay_yookassa', async (context) => {
   const { startPayment } = require('../../payments/start');
   const receipt = require('../../payments/receipt');
   const language = await languageOf(context);
   const chatId = context.chat.id;
   await context.answerCbQuery();
+  const wizardState = context.wizard.state;
+  if (!wizardState.consentAt) return context.reply(translate(language, 'consentNeeded'), consentKeyboard(language));
   // чек 54-ФЗ: нужен телефон или e-mail. В чате их не спрашиваем — берём сохранённые из прошлых заказов в магазине
   const savedContact = await customers.getContact(chatId);
   if (receipt.isEnabled() && !receipt.contactFrom(savedContact)) {
@@ -212,7 +241,6 @@ checkoutScene.action('pay_yookassa', async (context) => {
     return context.reply(translate(language, 'needContact'));
   }
 
-  const wizardState = context.wizard.state;
   const deliveryCity = wizardState.deliveryCity || null;
   // Пока покупатель шёл по шагам, корзину могли изменить (например, в витрине).
   // Пересчитываем сумму по текущей корзине и сверяем — иначе можно было бы оплатить старую, меньшую сумму.
@@ -246,6 +274,7 @@ checkoutScene.action('pay_yookassa', async (context) => {
     deliveryCost: priceQuote.delivery,
     deliveryMethod: deliveryCity ? 'city' : 'pickup',
     contact: savedContact,
+    consentAt: wizardState.consentAt,
   });
   // промокод засчитываем, когда придёт оплата (orders.markPaid)
   await context.scene.leave();

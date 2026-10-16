@@ -110,6 +110,14 @@ const STRINGS = {
 
     payButton: '💳 Оплатить через ЮKassa',
     cancelButton: 'Отмена',
+    consentPrompt:
+      '\n\nПеред оплатой подтвердите согласие на обработку персональных данных (адрес, контакты) — они нужны, чтобы доставить заказ. Оформляя заказ, вы принимаете условия оферты и политику обработки персональных данных.',
+    consentButton: '✅ Согласен на обработку данных',
+    consentDocumentButton: '📄 Текст согласия',
+    offerDocumentButton: '📄 Оферта',
+    privacyDocumentButton: '📄 Политика',
+    consentAccepted: 'Спасибо, согласие получено ✅ Можно оплачивать.',
+    consentNeeded: 'Сначала подтвердите согласие на обработку персональных данных — кнопка выше.',
     checkoutCancelled: 'Оформление отменено.',
     payLinkText: (code) => `Ссылка для оплаты заказа ${code}:`,
     payUrlButton: 'Оплатить',
@@ -235,6 +243,14 @@ const STRINGS = {
 
     payButton: '💳 Pay via ЮKassa',
     cancelButton: 'Cancel',
+    consentPrompt:
+      '\n\nBefore paying, please confirm your consent to the processing of personal data (address, contacts) — we need it to deliver your order. By placing the order you accept the public offer and the privacy policy.',
+    consentButton: '✅ I agree to data processing',
+    consentDocumentButton: '📄 Consent text',
+    offerDocumentButton: '📄 Offer',
+    privacyDocumentButton: '📄 Privacy policy',
+    consentAccepted: 'Thank you, consent received ✅ You can pay now.',
+    consentNeeded: 'Please confirm your consent to personal data processing first — the button above.',
     checkoutCancelled: 'Checkout cancelled.',
     payLinkText: (code) => `Payment link for order ${code}:`,
     payUrlButton: 'Pay',

@@ -5,7 +5,6 @@ const { EventEmitter } = require('node:events');
 const { database, runInTransaction, toSqliteTimestamp } = require('../database');
 const customers = require('../customers');
 const { getOwnerId } = require('../owner');
-const { escapeHtml } = require('../utils/format');
 const { logError, ignoreExpectedError } = require('../utils/log');
 const {
   ORDER_FLOW,
@@ -16,7 +15,17 @@ const {
   isPickup,
   statusLabel,
 } = require('./status');
-const { shopUrl, buyerText, buyerKeyboard, phoneOf, ownerText, ownerKeyboard } = require('./messages');
+const {
+  shopUrl,
+  buyerText,
+  buyerKeyboard,
+  phoneOf,
+  ownerText,
+  ownerKeyboard,
+  ownerDeliveryLine,
+  buyerMention,
+  CONTACTS_IN_ADMIN_NOTE,
+} = require('./messages');
 const { takeStockForOrder, returnStockForOrder } = require('./stock');
 
 // Короткий код заказа для покупателя: 4 символа без похожих друг на друга (0/O, 1/I исключены)
@@ -79,6 +88,7 @@ async function getOrder(orderId) {
 }
 
 // Заказ со статусом pending; total уже с учётом скидки и доставки. items — [{product_id, quantity, price}]
+// consentAt — когда покупатель согласился на обработку персональных данных (152-ФЗ), формат toSqliteTimestamp()
 async function createPendingOrder({
   chatId,
   address,
@@ -92,6 +102,7 @@ async function createPendingOrder({
   contact = null,
   carrier = null,
   addrRaw = null,
+  consentAt = null,
 }) {
   const orderId = await runInTransaction(async () => {
     const createdOrder = await database.order.create({
@@ -110,6 +121,7 @@ async function createPendingOrder({
         contact,
         carrier,
         addr_raw: addrRaw,
+        consent_at: consentAt,
       },
     });
     await database.orderItem.createMany({
@@ -274,11 +286,12 @@ async function rateOrder(bot, chatId, orderId, stars) {
   if (order.rating) return order;
   await database.order.update({ where: { id: orderId }, data: { rating: stars } });
   if (getOwnerId()) {
-    const buyerName = (await customers.getName(chatId)) || 'Покупатель';
     await messageOwner(
       bot,
-      `${'⭐'.repeat(stars)} ${escapeHtml(buyerName)} оценил(а) заказ № ${order.code} на ${stars}/5`,
-      { parse_mode: 'HTML' },
+      `${'⭐'.repeat(stars)} ${buyerMention(chatId)} оценил(а) заказ № ${order.code} на ${stars}/5`,
+      {
+        parse_mode: 'HTML',
+      },
     );
   }
   return getOrder(orderId);
@@ -302,6 +315,8 @@ module.exports = {
   notifyBuyer,
   ownerText,
   ownerKeyboard,
+  ownerDeliveryLine,
+  CONTACTS_IN_ADMIN_NOTE,
   notifyOwnerAboutNewOrder,
   changeStatus,
   markPaid,

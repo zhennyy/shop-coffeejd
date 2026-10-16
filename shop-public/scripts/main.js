@@ -17,6 +17,7 @@ import { replaceBrokenPhotos } from './catalog/product-photo.js';
 import { closeSheet, productSheetActions } from './catalog/product-sheet.js';
 import { renderCart, cartActions } from './cart/cart-view.js';
 import { checkoutActions } from './checkout/checkout-actions.js';
+import { consentActions } from './checkout/consent.js';
 import { loadOrders } from './orders/orders-view.js';
 import { orderActions } from './orders/order-actions.js';
 import { renderAiTexts, listenToAiButton, aiActions } from './ai/ai-pick.js';
@@ -111,6 +112,7 @@ replaceBrokenPhotos();
   productSheetActions,
   cartActions,
   checkoutActions,
+  consentActions,
   orderActions,
   aiActions,
   adminPageActions,

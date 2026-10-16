@@ -1,4 +1,4 @@
-// Проверка запросов оформления: способ доставки, адрес, промокод, контакт для чека
+// Проверка запросов оформления: способ доставки, адрес, промокод, контакт для чека, согласие на обработку данных
 const receipt = require('../../../payments/receipt');
 const { ValidationError, createValidator, cleanText } = require('../../validation');
 
@@ -20,9 +20,12 @@ const deliveryQuoteValidator = createValidator((request) => {
 
 const promoPostValidator = createValidator((request) => ({ promoCode: request.body.code }));
 
-// Заказ: телефон и/или e-mail; для чека 54-ФЗ нужен хотя бы один корректный
+// Заказ: согласие на обработку персональных данных (152-ФЗ) обязательно — галочка в витрине, не отмечена заранее.
+// Телефон и/или e-mail; для чека 54-ФЗ нужен хотя бы один корректный.
 const orderPostValidator = createValidator((request) => {
   const requestBody = request.body || {};
+  if (requestBody.consent !== true)
+    throw new ValidationError('Чтобы оформить заказ, отметьте согласие на обработку персональных данных');
   const phone = cleanText(requestBody.phone, 30);
   const email = cleanText(requestBody.email, 80);
   if (phone && phone.replace(/\D/g, '').length < MIN_PHONE_DIGITS)

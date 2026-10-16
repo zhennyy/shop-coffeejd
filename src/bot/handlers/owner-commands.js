@@ -34,14 +34,12 @@ function formatOwnerOrder(order) {
   orderText += `${ORDER_STATUS_LABELS[orders.baseStatus(order.status)] || orders.baseStatus(order.status)}\n\n`;
   if (order.discount_percent > 0)
     orderText += `Промокод «${escapeHtml(order.promo_code || '')}»: −${order.discount_percent}%\n`;
-  if (order.delivery_cost > 0) {
-    orderText += `🚚 Доставка${order.delivery_city ? ` (${escapeHtml(order.delivery_city)})` : ''}: ${formatPrice(order.delivery_cost)}\n`;
-  } else if (order.delivery_city === null && (order.address === 'Самовывоз' || order.address === 'Pickup')) {
-    orderText += '🚚 Самовывоз\n';
-  }
+  // 152-ФЗ: адрес и телефон в Telegram не отправляем — только способ доставки и город
+  orderText += orders.ownerDeliveryLine(order);
+  orderText += order.delivery_cost > 0 ? `: ${formatPrice(order.delivery_cost)}\n` : '\n';
   orderText += `💰 Сумма: <b>${formatPrice(order.total)}</b>\n`;
-  orderText += `📍 ${escapeHtml(order.address || '—')}\n`;
-  orderText += `🕐 ${(order.created_at || '').slice(0, 16).replace('T', ' ')}`;
+  orderText += `🕐 ${(order.created_at || '').slice(0, 16).replace('T', ' ')}\n`;
+  orderText += `🔒 ${orders.CONTACTS_IN_ADMIN_NOTE}`;
   return orderText;
 }
 

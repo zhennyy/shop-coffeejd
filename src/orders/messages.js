@@ -17,6 +17,12 @@ function shopUrl(queryParameters = {}) {
   return url.toString();
 }
 
+// Ссылка на юридическую страницу витрины: 'privacy' | 'consent' | 'offer' (файлы shop-public/legal/*.html)
+function legalPageUrl(pageName) {
+  const shopLink = shopUrl();
+  return shopLink ? new URL(`legal/${pageName}.html`, shopLink).toString() : null;
+}
+
 // Полоска прогресса: ✅ Оплачен → 📦 Собираем → ▫️ Отправлен → ▫️ Доставлен
 function progressLine(order, language) {
   const stepNames =
@@ -114,20 +120,36 @@ function phoneOf(order) {
   return phoneMatch ? phoneMatch[1].trim() : '';
 }
 
+// 152-ФЗ: Telegram — зарубежный сервис, поэтому в сообщениях владельцу нет телефона, адреса и имени покупателя.
+// Только способ доставки и город; контакты и адрес владелица смотрит в админке (она на нашем сервере).
+const OWNER_DELIVERY_METHOD_NAMES = {
+  city: 'Курьер',
+  post: 'СДЭК / Почта',
+  distance: 'Доставка по расстоянию',
+};
+const CONTACTS_IN_ADMIN_NOTE = 'Контакты и адрес — в админке';
+
+function ownerDeliveryLine(order) {
+  if (isPickup(order)) return '🏠 Самовывоз';
+  const methodName = OWNER_DELIVERY_METHOD_NAMES[order.delivery_method] || 'Доставка';
+  return `🚚 ${methodName} · ${escapeHtml(order.delivery_city)}`;
+}
+
+// Ссылка на покупателя в Telegram (его же данные Telegram) — без имени: имя хранится только у нас на сервере
+const buyerMention = (chatId) => `<a href="tg://user?id=${chatId}">Покупатель</a>`;
+
 async function ownerText(order) {
-  const buyerName = (await customers.getName(order.chat_id)) || 'Покупатель';
-  const buyerPhone = phoneOf(order);
   const lines = [
     `${order.base === 'paid' ? '🆕 <b>Новый заказ</b>' : '<b>Заказ</b>'} № ${order.code} · ${formatRubles(order.total)}`,
-    `👤 <a href="tg://user?id=${order.chat_id}">${escapeHtml(buyerName)}</a>${buyerPhone ? ' · ' + escapeHtml(buyerPhone) : ''}`,
+    `👤 ${buyerMention(order.chat_id)}`,
     '',
     itemsText(order, 'ru'),
     '',
-    isPickup(order) ? '🏠 Самовывоз' : `📍 ${escapeHtml(String(order.address || '').replace(/ · тел\..*$/, ''))}`,
+    ownerDeliveryLine(order),
   ];
   if (order.track) lines.push(`🚚 Трек: <code>${escapeHtml(order.track)}</code>`);
   if (order.rating) lines.push(`⭐ Оценка: ${order.rating}/5`);
-  lines.push('', `Статус: <b>${statusLabel(order, 'ru')}</b>`);
+  lines.push('', `Статус: <b>${statusLabel(order, 'ru')}</b>`, `🔒 ${CONTACTS_IN_ADMIN_NOTE}`);
   return lines.join('\n');
 }
 
@@ -152,4 +174,15 @@ function ownerKeyboard(order) {
   return { inline_keyboard: keyboardRows };
 }
 
-module.exports = { shopUrl, buyerText, buyerKeyboard, phoneOf, ownerText, ownerKeyboard };
+module.exports = {
+  shopUrl,
+  legalPageUrl,
+  buyerText,
+  buyerKeyboard,
+  phoneOf,
+  ownerText,
+  ownerKeyboard,
+  ownerDeliveryLine,
+  buyerMention,
+  CONTACTS_IN_ADMIN_NOTE,
+};

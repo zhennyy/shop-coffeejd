@@ -14,6 +14,7 @@ export const checkoutForm = {
   promo: '',
   promoPercent: 0,
   promoMessage: '',
+  consent: false, // согласие на обработку персональных данных — отмечает сам покупатель, для каждого заказа заново
   errors: {}, // id поля → текст ошибки
 };
 

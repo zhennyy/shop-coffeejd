@@ -12,6 +12,7 @@ import { renderProductGrid } from '../catalog/catalog-view.js';
 import { switchTab } from '../navigation.js';
 import { checkoutForm, checkout, OTHER_CITY, deliveryCost, addressKey } from './checkout-state.js';
 import { renderCheckout } from './checkout-view.js';
+import { CONSENT_FIELD_ID } from './consent.js';
 
 const MIN_CITY_LENGTH = 2;
 const MIN_ADDRESS_LENGTH = 5;
@@ -159,6 +160,11 @@ export async function payForOrder() {
     await applyPromo();
     if (!checkoutForm.promoPercent) return;
   }
+  // 152-ФЗ: без согласия на обработку данных заказ не создаём (сервер тоже проверит)
+  if (!checkoutForm.consent) {
+    showFieldError(CONSENT_FIELD_ID, texts().consentRequired);
+    return;
+  }
   checkout.isPaying = true;
   telegram?.MainButton?.showProgress?.();
   try {
@@ -173,6 +179,7 @@ export async function payForOrder() {
         phone: checkoutForm.phone,
         email: checkoutForm.email.trim(),
         promo: checkoutForm.promoPercent ? checkoutForm.promo : '',
+        consent: true,
       },
       1,
     );
@@ -180,7 +187,7 @@ export async function payForOrder() {
     state.cart = {};
     renderCart();
     renderProductGrid();
-    Object.assign(checkoutForm, { promo: '', promoPercent: 0, promoMessage: '', quote: null });
+    Object.assign(checkoutForm, { promo: '', promoPercent: 0, promoMessage: '', quote: null, consent: false });
     openPaymentLink(order.pay_url);
     switchTab('orders');
     showToast(`Заказ ${order.code} создан — осталось оплатить`);
