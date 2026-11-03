@@ -24,8 +24,11 @@ const LOCAL_PHOTO_PATTERN = /\/(uploads|photos)\/([^/?#]+)$/;
 function localPhotoPath(photoUrl) {
   const photoMatch = String(photoUrl || '').match(LOCAL_PHOTO_PATTERN);
   if (!photoMatch) return null;
-  const filePath = path.join(photoMatch[1] === 'photos' ? photosDir : uploadsDir, photoMatch[2]);
-  return fs.existsSync(filePath) ? filePath : null;
+  const baseDir = photoMatch[1] === 'photos' ? photosDir : uploadsDir;
+  const filePath = path.join(baseDir, photoMatch[2]);
+  // только файл внутри папки: «..» или сама папка не считаются фото
+  if (!filePath.startsWith(baseDir + path.sep)) return null;
+  return fs.existsSync(filePath) && fs.statSync(filePath).isFile() ? filePath : null;
 }
 const isLocalPhoto = (photoUrl) => Boolean(localPhotoPath(photoUrl));
 
@@ -178,4 +181,5 @@ module.exports = {
   assignProjectPhotos,
   createShowcasePhotoRoute,
   extensionFor,
+  localPhotoPath,
 };

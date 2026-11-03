@@ -43,3 +43,22 @@ test('юридические страницы (152-ФЗ) открываются 
   }
   assert.equal((await fetch(`${shop.base}/shop/legal/legal.css`)).status, 200);
 });
+
+test('заголовки безопасности и CSP витрины', async () => {
+  const { SECURITY_HEADERS, SHOP_CSP } = require('./index');
+  const shopPage = await fetch(`${shop.base}/shop/`);
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) assert.equal(shopPage.headers.get(name), value, name);
+  assert.equal(shopPage.headers.get('content-security-policy'), SHOP_CSP);
+  assert.match(SHOP_CSP, /script-src 'self' https:\/\/telegram\.org/);
+  // API и фото — без CSP витрины, но с базовыми заголовками
+  const api = await fetch(`${shop.base}/shop-api/catalog`);
+  assert.equal(api.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(api.headers.get('content-security-policy'), null);
+});
+
+test('фото: ссылка с «..» не выводит за папку uploads', () => {
+  const { localPhotoPath } = require('./photos');
+  assert.equal(localPhotoPath('https://shop.example/uploads/..'), null);
+  assert.equal(localPhotoPath('https://shop.example/uploads/'), null);
+  assert.equal(localPhotoPath('https://shop.example/photos/..'), null);
+});

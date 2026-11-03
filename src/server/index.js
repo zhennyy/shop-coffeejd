@@ -15,6 +15,26 @@ const PHOTO_CHECK_INTERVAL_MS = 6 * 3600 * 1000;
 const FIRST_PHOTO_CHECK_DELAY_MS = 5000;
 const LARGE_JSON_ROUTE = '/shop-api/admin/stock-import'; // у загрузки склада свой лимит размера
 
+// Заголовки безопасности (на сервере nginx добавляет свои, но магазин защищён и без него).
+// CSP витрины: скрипты — только свои и telegram-web-app.js; фото товаров бывают по чужим ссылкам, пока не скачаны к нам;
+// 'unsafe-inline' у стилей — для style="…" в разметке витрины. frame-ancestors не ставим: витрину открывает Telegram.
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+};
+const SHOP_CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://telegram.org",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: https:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join('; ');
+
 function createApp(bot, { showCartFor, aiPick } = {}) {
   const app = express();
   app.set('trust proxy', 'loopback'); // доверяем только своему nginx на этом же сервере
@@ -22,6 +42,13 @@ function createApp(bot, { showCartFor, aiPick } = {}) {
   app.use((request, response, next) =>
     request.path === LARGE_JSON_ROUTE ? next() : parseJson(request, response, next),
   );
+
+  app.use((request, response, next) => {
+    response.set(SECURITY_HEADERS);
+    if (request.path === '/shop' || request.path.startsWith('/shop/'))
+      response.set('Content-Security-Policy', SHOP_CSP);
+    next();
+  });
 
   app.use('/uploads', express.static(photos.uploadsDir)); // без авторизации — Telegram должен уметь их скачать
   app.use('/photos', express.static(photos.photosDir, { maxAge: '7d' }));
@@ -72,4 +99,4 @@ function startWebhookServer(bot, showcaseHelpers = {}) {
   );
 }
 
-module.exports = { startWebhookServer, createApp, assertPublicUrl: photos.assertPublicUrl };
+module.exports = { startWebhookServer, createApp, assertPublicUrl: photos.assertPublicUrl, SECURITY_HEADERS, SHOP_CSP };
